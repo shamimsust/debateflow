@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "895055662934",
+    "firebase_url": "https://debateflow-14ce8-default-rtdb.firebaseio.com",
+    "project_id": "debateflow-14ce8",
+    "storage_bucket": "debateflow-14ce8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:895055662934:android:52a2352e005cd505de90f7",
+        "android_client_info": {
+          "package_name": "com.example.debateflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEJ4zQ1u5n-T_AQVtAnydPUeZyhrRQ5EQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
