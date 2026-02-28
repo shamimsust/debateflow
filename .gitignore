@@ -43,3 +43,22 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# 🔒 Firebase / Sensitive Keys (CRITICAL)
+**/android/app/google-services.json
+**/ios/Runner/GoogleService-Info.plist
+**/ios/ServiceDefinitions.json
+**/lib/firebase_options.dart
+.env
+local.properties
+
+# 🍎 iOS / CocoaPods
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+/ios/ServiceDefinitions.json
+
+# 🌐 Web
+lib/generated_plugin_registrant.dart
+.project

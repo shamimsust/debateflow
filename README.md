@@ -15,12 +15,22 @@
 
 ---
 
-## 🛠️ Project Structure
+## 🛠️ Tech Stack
+
+* **Frontend:** Flutter (Dart)
+* **Backend:** Firebase (Auth, Realtime Database)
+* **State Management:** Provider / StatefulWidget
+* **Security:** Firebase Rules for Admin vs. Judge access
+
+---
+
+## 📂 Project Structure
 
 ```text
 lib/
 ├── models/         # Data structures (Ballots, Teams, Users)
-├── screens/        # UI Layers (Auth, Pairings, Setup, etc.)
-├── services/       # Business Logic (Auth, Matchmaking, Standings)
+├── screens/        # UI Layers (Auth, Pairings, Setup, Adjudication)
+├── services/       # Business Logic (Firebase, Matchmaking, Rankings)
+├── utils/          # Formatting & Validation helpers
 ├── widgets/        # Reusable UI components (Overview cards)
 └── main.dart       # App entry point & Theme configuration
