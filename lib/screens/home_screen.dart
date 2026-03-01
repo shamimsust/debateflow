@@ -4,7 +4,6 @@ import '../services/auth_service.dart';
 import 'add_team_screen.dart'; 
 import 'standings_screen.dart'; 
 import 'pairing_screen.dart';
-import 'motion_reveal_screen.dart';
 import 'admin_motion_control.dart'; 
 import 'setup_screen.dart'; 
 
@@ -32,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _listenToRoundStatus() {
-    // 🔗 Syncs the local _currentRound with the Admin's selection in Firebase
     FirebaseDatabase.instance
         .ref('tournaments/${widget.tournamentId}/currentRound')
         .onValue
@@ -129,27 +127,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (c) => SetupScreen(tournamentId: widget.tournamentId))),
                 ),
+                // 🛑 REPLACED: This is now the only way to access Motion settings and Reveal
                 _buildAdminCard(
-                  title: "CA Panel",
-                  subtitle: "Set Motion",
-                  icon: Icons.admin_panel_settings,
-                  color: Colors.red.shade700,
+                  title: "Motion Control",
+                  subtitle: "Set & Reveal",
+                  icon: Icons.bolt_rounded,
+                  color: Colors.amber.shade800,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (c) => AdminMotionControl(tournamentId: widget.tournamentId))),
-                ),
-                // 📺 FIXED MOTION REVEAL CARD
-                _buildAdminCard(
-                  title: "Reveal",
-                  subtitle: "Show Motion",
-                  icon: Icons.bolt_rounded,
-                  color: Colors.amber.shade700,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => MotionRevealScreen(
-                      // 🔥 Key forces the widget to rebuild when round changes
-                      key: ValueKey('reveal_round_$_currentRound'), 
-                      tournamentId: widget.tournamentId, 
-                      round: _currentRound,
-                    ))),
                 ),
               ],
             ),
@@ -159,8 +144,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // ... (Keeping your existing _buildStatCard and _buildAdminCard as they were)
 
   Widget _buildStatCard(String title, DatabaseReference ref, IconData icon) {
     return Expanded(

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_database/firebase_database.dart'; // Needed for direct fetch
+import 'package:firebase_database/firebase_database.dart'; 
 import '../services/motion_service.dart';
-import 'motion_reveal_screen.dart'; // Ensure this import exists
+import 'motion_reveal_screen.dart'; 
 
 class AdminMotionControl extends StatefulWidget {
   final String tournamentId;
@@ -21,10 +21,9 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
   @override
   void initState() {
     super.initState();
-    _loadExistingData(); // Load data for Round 1 on startup
+    _loadExistingData(); 
   }
 
-  // 🛠️ FIX: Fetch data when switching rounds so you don't overwrite Round 2 with Round 1 text
   void _loadExistingData() async {
     setState(() => _isLoading = true);
     
@@ -46,11 +45,45 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  @override
-  void dispose() {
-    _motionController.dispose();
-    _infoController.dispose();
-    super.dispose();
+  Future<void> _updateGlobalRound(String round) async {
+    await FirebaseDatabase.instance
+        .ref('tournaments/${widget.tournamentId}')
+        .update({'currentRound': round});
+  }
+
+  // 🔥 NEW: Wipe Round Data Function
+  void _handleWipeData() async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text("DELETE MOTION?"),
+        content: Text("This will permanently delete the motion and info slide for Round $_selectedRound. This cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("CANCEL")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+            child: const Text("DELETE PERMANENTLY"),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirm && mounted) {
+      final cleanRound = _selectedRound.toLowerCase().replaceAll(' ', '_');
+      await FirebaseDatabase.instance
+          .ref('motions/${widget.tournamentId}/round_$cleanRound')
+          .remove();
+      
+      _motionController.clear();
+      _infoController.clear();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Round $_selectedRound Data Wiped"))
+        );
+      }
+    }
   }
 
   void _handleSave() async {
@@ -66,9 +99,11 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
       infoSlide: _infoController.text.trim(),
     );
 
+    await _updateGlobalRound(_selectedRound);
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Motion for Round $_selectedRound Saved"))
+        SnackBar(content: Text("Round $_selectedRound Draft Saved"))
       );
     }
   }
@@ -96,7 +131,6 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
     ) ?? false;
 
     if (confirm && mounted) {
-      // 1. Save current text to ensure the release contains the latest edits
       await context.read<MotionService>().setMotion(
         tId: widget.tournamentId,
         round: _selectedRound,
@@ -104,22 +138,24 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
         infoSlide: _infoController.text.trim(),
       );
       
-      // 2. Set is_released to true
       await context.read<MotionService>().releaseMotion(widget.tournamentId, _selectedRound);
+      await _updateGlobalRound(_selectedRound);
       
-      if (mounted) {
-        // 3. 🚀 THE REDIRECT FIX: Navigate to the reveal page with the CORRECT round
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => MotionRevealScreen(
-              tournamentId: widget.tournamentId, 
-              round: _selectedRound, // Passes "1", "2", etc.
-            ),
-          ),
-        );
-      }
+      _launchReveal();
     }
+  }
+
+  void _launchReveal() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MotionRevealScreen(
+          key: ValueKey('reveal_$_selectedRound'), 
+          tournamentId: widget.tournamentId, 
+          round: _selectedRound,
+        ),
+      ),
+    );
   }
 
   void _showError(String msg) {
@@ -133,7 +169,7 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text("Chief Adjudicator Panel"),
+        title: const Text("Motion Control"),
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
       ),
@@ -157,7 +193,7 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
                       .toList(),
                   onChanged: (v) {
                     setState(() => _selectedRound = v!);
-                    _loadExistingData(); // 🔥 Update text fields when round changes
+                    _loadExistingData(); 
                   },
                 ),
               ),
@@ -207,6 +243,31 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
                   ),
                 ),
               ],
+            ),
+
+            const SizedBox(height: 30),
+            const Divider(),
+            const SizedBox(height: 20),
+            
+            ElevatedButton.icon(
+              onPressed: _launchReveal,
+              icon: const Icon(Icons.bolt_rounded),
+              label: Text("LAUNCH REVEAL: ROUND $_selectedRound"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+
+            const SizedBox(height: 15),
+            
+            // 🛑 DANGER ZONE: Wipe Button
+            TextButton.icon(
+              onPressed: _handleWipeData,
+              icon: const Icon(Icons.delete_forever, color: Colors.grey),
+              label: const Text("Wipe Round Data", style: TextStyle(color: Colors.grey)),
             ),
           ],
         ),
