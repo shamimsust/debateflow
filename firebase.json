@@ -1,33 +1,19 @@
 {
-  "flutter": {
-    "platforms": {
-      "android": {
-        "default": {
-          "projectId": "debateflow-14ce8",
-          "appId": "1:895055662934:android:52a2352e005cd505de90f7",
-          "fileOutput": "android/app/google-services.json"
-        }
-      },
-      "dart": {
-        "lib/firebase_options.dart": {
-          "projectId": "debateflow-14ce8",
-          "configurations": {
-            "android": "1:895055662934:android:52a2352e005cd505de90f7",
-            "ios": "1:895055662934:ios:fdc90dd06c4cddb7de90f7",
-            "macos": "1:895055662934:ios:fdc90dd06c4cddb7de90f7",
-            "web": "1:895055662934:web:d95a9a562b4a10d9de90f7",
-            "windows": "1:895055662934:web:d45c397046ac4696de90f7"
-          }
-        }
-      }
-    }
-  },
   "hosting": {
     "public": "build/web",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/**",
+        "headers": [
+          { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+          { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" }
+        ]
+      }
     ],
     "rewrites": [
       {
