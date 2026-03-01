@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class CreateTournamentScreen extends StatefulWidget {
-  final String uid; // The authenticated user's ID
+  final String uid; // The authenticated user's ID (Admin)
   const CreateTournamentScreen({super.key, required this.uid});
 
   @override
@@ -13,7 +13,6 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   final _nameController = TextEditingController();
   final _dateController = TextEditingController();
   
-  // Options aligned with your ResultCalculator and StandingsService logic
   final List<String> _formats = [
     'WSDC (3 vs 3)', 
     'British Parliamentary (BP)', 
@@ -26,7 +25,6 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   @override
   void initState() {
     super.initState();
-    // Default to today's date for convenience
     _dateController.text = DateTime.now().toString().split(' ')[0];
   }
 
@@ -58,22 +56,24 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       final db = FirebaseDatabase.instance.ref();
       
       // 1. Generate a globally unique ID for the tournament
-      final tournamentRef = db.child('tournaments').push();
-      final String tId = tournamentRef.key!;
+      final String? tId = db.child('tournaments').push().key;
+      if (tId == null) throw Exception("Could not generate tournament ID");
+
       final String ruleSystem = _mapFormatToRule(_selectedFormat);
 
-      // 2. Prepare Data Structure for the Dashboard and Pairings
+      // 2. Prepare Global Tournament Data
       final tournamentData = {
-        'adminUid': widget.uid,
+        'tId': tId,
+        'adminUid': widget.uid, // 🔑 Crucial for Security Rules
         'name': name,
-        'rule': ruleSystem, // The "Pipe" for BallotScreen/Standings
+        'rule': ruleSystem,
         'date': _dateController.text,
         'status': 'Setup',
-        'currentRound': 1,
+        'currentRound': "1", // Saved as String to match your Reveal logic
         'createdAt': ServerValue.timestamp,
       };
 
-      // 3. Prepare Settings for the Validation Engine
+      // 3. Prepare Format-Specific Settings
       final settingsData = {
         'formatName': _selectedFormat,
         'minMarks': ruleSystem == "WSDC" ? 60.0 : 50.0,
@@ -81,21 +81,28 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
         'isLocked': false,
       };
 
-      // 4. Multi-path Atomic Write
-      // This ensures all nodes are created at once or not at all
-      await Future.wait([
-        db.child('tournaments/$tId').set(tournamentData),
-        db.child('settings/$tId').set(settingsData),
-        // Link to the user's personal list for the Lobby/Home view
-        db.child('users/${widget.uid}/my_tournaments/$tId').set(true),
-      ]);
+      // 4. MULTI-PATH ATOMIC UPDATE
+      // This writes to the Global "tournaments" folder (visible to everyone)
+      // AND the private user "my_tournaments" folder simultaneously.
+      Map<String, dynamic> updates = {};
+      
+      // Node 1: Global List (For all users to see)
+      updates['tournaments/$tId'] = tournamentData;
+      
+      // Node 2: Tournament Settings
+      updates['settings/$tId'] = settingsData;
+      
+      // Node 3: User Shortcut (To filter "My Tournaments")
+      updates['users/${widget.uid}/my_tournaments/$tId'] = true;
+
+      await db.update(updates);
 
       if (mounted) {
-        Navigator.pop(context); // Return to Lobby
+        Navigator.pop(context); // Return to Tournament List
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Tournament Initialized Successfully!"), 
-            backgroundColor: Colors.green,
+            content: Text("Tournament Initialized on SEA-1!"), 
+            backgroundColor: Color(0xFF2264D7),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -113,7 +120,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text("New Tournament"),
+        title: const Text("New Tournament", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF2264D7),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -127,7 +134,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
             const SizedBox(height: 30),
             
             _buildLabel("Tournament Name"),
-            _buildTextField("e.g. World Schools 2026", _nameController, Icons.emoji_events_outlined),
+            _buildTextField("e.g. Asia Pacific Debating 2026", _nameController, Icons.emoji_events_outlined),
             const SizedBox(height: 25),
             
             _buildLabel("Debate Format"),
@@ -145,16 +152,16 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     );
   }
 
-  // --- UI HELPER COMPONENTS ---
+  // --- UI COMPONENTS ---
 
   Widget _buildHeaderSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Create a New Circuit", 
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+        const Text("Launch a New Circuit", 
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         const SizedBox(height: 8),
-        Text("Set the rules and format for your tournament node on the SEA-1 Singapore cluster.", 
+        Text("Your tournament will be hosted globally and visible to all participants.", 
           style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
       ],
     );
@@ -164,30 +171,40 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(text.toUpperCase(), 
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.1)),
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.2)),
     );
   }
 
   Widget _buildTextField(String hint, TextEditingController controller, IconData icon) {
-    return TextField(
-      controller: controller,
-      style: const TextStyle(fontWeight: FontWeight.w500),
-      decoration: InputDecoration(
-        hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF2264D7)),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+      ),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: Icon(icon, color: const Color(0xFF2264D7)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+        ),
       ),
     );
   }
 
   Widget _buildDropdown() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+      ),
       child: DropdownButtonFormField<String>(
-        initialValue: _selectedFormat,
+        value: _selectedFormat,
         items: _formats.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontWeight: FontWeight.w500)))).toList(),
         onChanged: (val) => setState(() => _selectedFormat = val!),
         decoration: const InputDecoration(
@@ -199,17 +216,23 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   }
 
   Widget _buildDatePicker() {
-    return TextField(
-      controller: _dateController,
-      readOnly: true,
-      onTap: _selectDate,
-      style: const TextStyle(fontWeight: FontWeight.w500),
-      decoration: InputDecoration(
-        hintText: "Select Date",
-        prefixIcon: const Icon(Icons.calendar_today_outlined, color: Color(0xFF2264D7)),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+      ),
+      child: TextField(
+        controller: _dateController,
+        readOnly: true,
+        onTap: _selectDate,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+        decoration: const InputDecoration(
+          hintText: "Select Date",
+          prefixIcon: Icon(Icons.calendar_today_outlined, color: Color(0xFF2264D7)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+        ),
       ),
     );
   }
@@ -220,9 +243,6 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2030),
-      builder: (context, child) {
-        return Theme(data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF2264D7))), child: child!);
-      },
     );
     if (picked != null) setState(() => _dateController.text = picked.toString().split(' ')[0]);
   }
@@ -230,18 +250,19 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   Widget _buildSubmitButton() {
     return SizedBox(
       width: double.infinity,
-      height: 58,
+      height: 60,
       child: ElevatedButton(
         onPressed: _isLoading ? null : _createTournament,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF2264D7),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          elevation: 0,
+          elevation: 4,
+          shadowColor: const Color(0xFF2264D7).withOpacity(0.4),
         ),
         child: _isLoading 
           ? const CircularProgressIndicator(color: Colors.white)
-          : const Text("INITIALIZE TOURNAMENT", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+          : const Text("INITIALIZE TOURNAMENT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
       ),
     );
   }
