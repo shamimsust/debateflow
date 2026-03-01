@@ -90,19 +90,24 @@ class _BallotScreenState extends State<BallotScreen> {
     }
   }
 
-  // 🛠️ AUTO-DETECT IRONMAN LOGIC
+  // 🛠️ UPDATED AUTO-DETECT: Ignores the Reply speech (idx 3)
   void _checkAndSetIronman(String teamName) {
     if (debateRule != "WSDC") return;
     
     List<String?> selected = _selectedSpeakers[teamName]!;
-    List<String> activeNames = selected.whereType<String>().toList();
     
-    // If name count > unique name count, someone is repeated
-    bool hasDuplicates = activeNames.length > activeNames.toSet().length;
+    // Only check Pos 1, 2, and 3 (substantive speeches)
+    // The reply speaker is expected to be a duplicate and shouldn't trigger Ironman
+    List<String> substantiveNames = selected
+        .sublist(0, 3) 
+        .whereType<String>()
+        .toList();
+    
+    bool hasSubstantiveDuplicates = substantiveNames.length > substantiveNames.toSet().length;
 
-    if (_teamIronmanStatus[teamName] != hasDuplicates) {
+    if (_teamIronmanStatus[teamName] != hasSubstantiveDuplicates) {
       setState(() {
-        _teamIronmanStatus[teamName] = hasDuplicates;
+        _teamIronmanStatus[teamName] = hasSubstantiveDuplicates;
       });
     }
   }
@@ -206,7 +211,7 @@ class _BallotScreenState extends State<BallotScreen> {
               items: speakers.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13)))).toList(),
               onChanged: (val) {
                 setState(() => _selectedSpeakers[teamName]![idx] = val);
-                _checkAndSetIronman(teamName); // Trigger auto-detect
+                _checkAndSetIronman(teamName); 
               },
             ),
           ),
@@ -272,10 +277,12 @@ class _BallotScreenState extends State<BallotScreen> {
 
         if (debateRule == "WSDC") {
           bool isIronmanChecked = _teamIronmanStatus[teamName] ?? false;
-          Set<String?> uniqueNames = selected.where((n) => n != null).toSet();
           
-          if (uniqueNames.length < 3 && !isIronmanChecked) {
-            throw "Team $teamName has duplicate speakers. Please verify if they are an Ironman team.";
+          // 🛠️ VALIDATION FIX: Only validate unique names for the first 3 speeches
+          Set<String?> uniqueSubstantiveNames = selected.sublist(0, 3).where((n) => n != null).toSet();
+          
+          if (uniqueSubstantiveNames.length < 3 && !isIronmanChecked) {
+            throw "Team $teamName has duplicate substantive speakers. Please verify if they are an Ironman team.";
           }
         }
       }

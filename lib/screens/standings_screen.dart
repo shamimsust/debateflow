@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart'; // For Clipboard
 
 // --- MODELS ---
 class TeamStanding {
@@ -34,14 +35,37 @@ class StandingsScreen extends StatefulWidget {
 class _StandingsScreenState extends State<StandingsScreen> {
   final ScreenshotController screenshotController = ScreenshotController();
 
-  Future<void> _exportAndShare() async {
+  // 🛠️ NEW: Generate and copy public link
+  void _sharePublicLink() {
+    // Replace 'debateflow-2026' with your actual Firebase project hosting domain
+    final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
+    final String shareUrl = "$baseUrl/#/standings?tid=${widget.tournamentId}";
+    
+    Clipboard.setData(ClipboardData(text: shareUrl));
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Public standings link copied to clipboard!"),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  // 🛠️ Updated: Image share (PDF option is removed)
+  Future<void> _exportAndShareImage() async {
     try {
       final Uint8List? imageBytes = await screenshotController.capture();
       if (imageBytes != null) {
-        final directory = await getTemporaryDirectory();
-        final file = await File('${directory.path}/rankings.png').create();
-        await file.writeAsBytes(imageBytes);
-        await Share.shareXFiles([XFile(file.path)], text: 'Tournament Rankings');
+        if (kIsWeb) {
+          // Web doesn't support XFile sharing from local disk easily, 
+          // usually better to just provide the link on Web.
+          _sharePublicLink();
+        } else {
+          final directory = await getTemporaryDirectory();
+          final file = await File('${directory.path}/rankings.png').create();
+          await file.writeAsBytes(imageBytes);
+          await Share.shareXFiles([XFile(file.path)], text: 'Tournament Rankings');
+        }
       }
     } catch (e) {
       debugPrint("Export Error: $e");
@@ -60,24 +84,31 @@ class _StandingsScreenState extends State<StandingsScreen> {
           foregroundColor: Colors.white,
           elevation: 2,
           actions: [
+            // Link Share Button
             IconButton(
-              icon: const Icon(Icons.share_rounded),
-              onPressed: _exportAndShare,
+              tooltip: "Copy Public Link",
+              icon: const Icon(Icons.link_rounded),
+              onPressed: _sharePublicLink,
+            ),
+            // Image Share Button
+            IconButton(
+              tooltip: "Share as Image",
+              icon: const Icon(Icons.image_rounded),
+              onPressed: _exportAndShareImage,
             ),
             const SizedBox(width: 8),
           ],
-          bottom: TabBar(
+          bottom: const TabBar(
             indicatorColor: Colors.white,
             indicatorWeight: 4,
             labelColor: Colors.white,
-            unselectedLabelColor: Colors.white.withValues(alpha: 0.6),
-            tabs: const [
+            unselectedLabelColor: Colors.white60,
+            tabs: [
               Tab(text: "TEAMS"),
               Tab(text: "SPEAKERS"),
             ],
           ),
         ),
-        // 🛠️ IMPORTANT: The classes below must be called correctly here
         body: Screenshot(
           controller: screenshotController,
           child: Container(
@@ -95,8 +126,7 @@ class _StandingsScreenState extends State<StandingsScreen> {
   }
 }
 
-// --- 🛠️ FIX: Ensure these are CLASSES, not methods inside the state above ---
-
+// --- TEAM RANKINGS TAB ---
 class _TeamRankingsTab extends StatelessWidget {
   final String tournamentId;
   const _TeamRankingsTab({required this.tournamentId});
@@ -119,13 +149,19 @@ class _TeamRankingsTab extends StatelessWidget {
             totalMarks: (value['totalMarks'] ?? 0).toDouble(),
           ));
         });
+        // Sort by Wins, then Total Marks
         teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
+        
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: teams.length,
           itemBuilder: (context, index) => _RankingCard(
-            index: index, title: teams[index].teamName, subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
-            trailingValue: teams[index].wins.toStringAsFixed(0), trailingLabel: "WINS", isTeam: true,
+            index: index, 
+            title: teams[index].teamName, 
+            subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
+            trailingValue: teams[index].wins.toStringAsFixed(0), 
+            trailingLabel: "WINS", 
+            isTeam: true,
           ),
         );
       },
@@ -133,6 +169,7 @@ class _TeamRankingsTab extends StatelessWidget {
   }
 }
 
+// --- SPEAKER RANKINGS TAB ---
 class _SpeakerRankingsTab extends StatelessWidget {
   final String tournamentId;
   const _SpeakerRankingsTab({required this.tournamentId});
@@ -148,6 +185,7 @@ class _SpeakerRankingsTab extends StatelessWidget {
         }
         Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
         Map<String, SpeakerStanding> speakerMap = {};
+        
         ballots.forEach((matchId, ballotData) {
           if (ballotData['results'] != null) {
             Map results = Map<dynamic, dynamic>.from(ballotData['results'] as Map);
@@ -161,23 +199,39 @@ class _SpeakerRankingsTab extends StatelessWidget {
                   String key = "$name-$teamName";
                   if (speakerMap.containsKey(key)) {
                     var cur = speakerMap[key]!;
-                    speakerMap[key] = SpeakerStanding(speakerName: name, teamName: teamName, totalScore: cur.totalScore + score, appearances: cur.appearances + 1);
+                    speakerMap[key] = SpeakerStanding(
+                      speakerName: name, 
+                      teamName: teamName, 
+                      totalScore: cur.totalScore + score, 
+                      appearances: cur.appearances + 1
+                    );
                   } else {
-                    speakerMap[key] = SpeakerStanding(speakerName: name, teamName: teamName, totalScore: score, appearances: 1);
+                    speakerMap[key] = SpeakerStanding(
+                      speakerName: name, 
+                      teamName: teamName, 
+                      totalScore: score, 
+                      appearances: 1
+                    );
                   }
                 }
               }
             });
           }
         });
+        
         List<SpeakerStanding> speakers = speakerMap.values.toList();
         speakers.sort((a, b) => b.averageScore.compareTo(a.averageScore));
+        
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: speakers.length,
           itemBuilder: (context, index) => _RankingCard(
-            index: index, title: speakers[index].speakerName, subtitle: speakers[index].teamName,
-            trailingValue: speakers[index].averageScore.toStringAsFixed(2), trailingLabel: "AVG", isTeam: false,
+            index: index, 
+            title: speakers[index].speakerName, 
+            subtitle: speakers[index].teamName,
+            trailingValue: speakers[index].averageScore.toStringAsFixed(2), 
+            trailingLabel: "AVG", 
+            isTeam: false,
           ),
         );
       },
@@ -185,7 +239,7 @@ class _SpeakerRankingsTab extends StatelessWidget {
   }
 }
 
-// --- KEEP _RankingCard AS IT WAS ---
+// --- RANKING CARD COMPONENT ---
 class _RankingCard extends StatelessWidget {
   final int index;
   final String title;
@@ -194,7 +248,14 @@ class _RankingCard extends StatelessWidget {
   final String trailingLabel;
   final bool isTeam;
 
-  const _RankingCard({required this.index, required this.title, required this.subtitle, required this.trailingValue, required this.trailingLabel, required this.isTeam});
+  const _RankingCard({
+    required this.index, 
+    required this.title, 
+    required this.subtitle, 
+    required this.trailingValue, 
+    required this.trailingLabel, 
+    required this.isTeam
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -203,7 +264,17 @@ class _RankingCard extends StatelessWidget {
       children: [
         Container(
           margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+          decoration: BoxDecoration(
+            color: Colors.white, 
+            borderRadius: BorderRadius.circular(15), 
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03), 
+                blurRadius: 10, 
+                offset: const Offset(0, 4)
+              )
+            ]
+          ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: _buildRankCircle(index),
@@ -219,20 +290,28 @@ class _RankingCard extends StatelessWidget {
 
   Widget _buildRankCircle(int index) {
     Color color = Colors.grey.shade100;
-    if (index == 0) color = const Color(0xFFFFD700);
-    else if (index == 1) color = const Color(0xFFC0C0C0);
-    else if (index == 2) color = const Color(0xFFCD7F32);
-    return CircleAvatar(backgroundColor: color, radius: 16, child: Text("${index + 1}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)));
+    if (index == 0) color = const Color(0xFFFFD700); // Gold
+    else if (index == 1) color = const Color(0xFFC0C0C0); // Silver
+    else if (index == 2) color = const Color(0xFFCD7F32); // Bronze
+    
+    return CircleAvatar(
+      backgroundColor: color, 
+      radius: 16, 
+      child: Text("${index + 1}", style: TextStyle(color: index < 3 ? Colors.white : Colors.black54, fontWeight: FontWeight.bold, fontSize: 13))
+    );
   }
 
   Widget _buildBadge() {
     return Container(
       width: 58, padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(color: const Color(0xFF2264D7).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(trailingValue, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
-        Text(trailingLabel, style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Color(0xFF2264D7))),
-      ]),
+      decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, 
+        children: [
+          Text(trailingValue, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+          Text(trailingLabel, style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Color(0xFF2264D7))),
+        ]
+      ),
     );
   }
 
@@ -241,7 +320,11 @@ class _RankingCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(children: [
         const Expanded(child: Divider(color: Colors.redAccent, thickness: 1.5)),
-        Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(border: Border.all(color: Colors.redAccent), borderRadius: BorderRadius.circular(20)), child: const Text("SEMIS BREAK LINE", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900, fontSize: 9))),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
+          decoration: BoxDecoration(border: Border.all(color: Colors.redAccent), borderRadius: BorderRadius.circular(20)), 
+          child: const Text("SEMIS BREAK LINE", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900, fontSize: 9))
+        ),
         const Expanded(child: Divider(color: Colors.redAccent, thickness: 1.5)),
       ]),
     );

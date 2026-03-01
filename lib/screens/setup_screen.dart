@@ -299,8 +299,10 @@ class _ListManager extends StatefulWidget {
   final String label;
   final Function(int) onCountChanged;
 
-  const _ListManager({super.key, required this.ref, required this.label, required this.onCountChanged});
-
+  // Change this line:
+  const _ListManager({required this.ref, required this.label, required this.onCountChanged}); 
+  // Removed super.key and the 'key' parameter
+  
   @override
   State<_ListManager> createState() => _ListManagerState();
 }

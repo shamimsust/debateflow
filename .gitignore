@@ -60,5 +60,4 @@ local.properties
 /ios/ServiceDefinitions.json
 
 # 🌐 Web
-lib/generated_plugin_registrant.dart
 .project
