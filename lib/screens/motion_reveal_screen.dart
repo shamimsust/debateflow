@@ -4,13 +4,14 @@ import 'package:firebase_database/firebase_database.dart';
 
 class MotionRevealScreen extends StatelessWidget {
   final String tournamentId;
-  final String round;
+  final String round; // Pass "1", "2", etc.
 
   const MotionRevealScreen({super.key, required this.tournamentId, required this.round});
 
   @override
   Widget build(BuildContext context) {
-    String displayRound = round.replaceAll('_', ' ').toUpperCase();
+    // Standardizing the display name (e.g., "ROUND 1")
+    String displayRound = "ROUND ${round.replaceAll('round_', '').toUpperCase()}";
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -33,7 +34,8 @@ class MotionRevealScreen extends StatelessWidget {
           ),
         ),
         child: StreamBuilder<DatabaseEvent>(
-          stream: FirebaseDatabase.instance.ref('motions/$tournamentId/$round').onValue,
+          // 🔗 MATCHED PATH: Updated to match MotionService 'round_$round'
+          stream: FirebaseDatabase.instance.ref('motions/$tournamentId/round_$round').onValue,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: Color(0xFF46C3D7)));
@@ -51,7 +53,11 @@ class MotionRevealScreen extends StatelessWidget {
             return AnimatedSwitcher(
               duration: const Duration(milliseconds: 800),
               child: isReleased 
-                ? _MotionContent(motionText: motionText, infoSlide: infoSlide) 
+                ? _MotionContent(
+                    key: ValueKey('content_$round'), // Key ensures animation resets per round
+                    motionText: motionText, 
+                    infoSlide: infoSlide
+                  ) 
                 : _buildWaitingState("AWAITING DECRYPTION..."),
             );
           },
@@ -80,7 +86,7 @@ class MotionRevealScreen extends StatelessWidget {
 class _MotionContent extends StatefulWidget {
   final String motionText;
   final String? infoSlide;
-  const _MotionContent({required this.motionText, this.infoSlide});
+  const _MotionContent({super.key, required this.motionText, this.infoSlide});
 
   @override
   State<_MotionContent> createState() => _MotionContentState();
@@ -92,7 +98,7 @@ class _MotionContentState extends State<_MotionContent> {
   Timer? _typewriterTimer;
 
   Timer? _countdownTimer;
-  int _secondsRemaining = 1800; // 30 minutes
+  int _secondsRemaining = 1800; 
   bool _isClockRunning = false;
 
   @override
@@ -105,10 +111,12 @@ class _MotionContentState extends State<_MotionContent> {
     final fullText = widget.motionText.toUpperCase();
     _typewriterTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
       if (_charIndex < fullText.length) {
-        setState(() {
-          _displayPath += fullText[_charIndex];
-          _charIndex++;
-        });
+        if (mounted) {
+          setState(() {
+            _displayPath += fullText[_charIndex];
+            _charIndex++;
+          });
+        }
       } else {
         timer.cancel();
       }
@@ -121,7 +129,7 @@ class _MotionContentState extends State<_MotionContent> {
     } else {
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_secondsRemaining > 0) {
-          setState(() => _secondsRemaining--);
+          if (mounted) setState(() => _secondsRemaining--);
         } else {
           timer.cancel();
         }
@@ -151,7 +159,8 @@ class _MotionContentState extends State<_MotionContent> {
         onPressed: _toggleClock,
         backgroundColor: _isClockRunning ? Colors.redAccent : const Color(0xFF46C3D7),
         icon: Icon(_isClockRunning ? Icons.pause : Icons.play_arrow, color: Colors.white),
-        label: Text(_isClockRunning ? "PAUSE PREP" : "START PREP", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        label: Text(_isClockRunning ? "PAUSE PREP" : "START PREP", 
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -163,10 +172,11 @@ class _MotionContentState extends State<_MotionContent> {
                 if (widget.infoSlide != null && widget.infoSlide!.isNotEmpty) ...[
                   const Text("INFO SLIDE", style: TextStyle(color: Color(0xFF46C3D7), letterSpacing: 5, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 15),
-                  Text(widget.infoSlide!, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16, fontStyle: FontStyle.italic)),
+                  Text(widget.infoSlide!, 
+                    textAlign: TextAlign.center, 
+                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16, fontStyle: FontStyle.italic)),
                   const SizedBox(height: 50),
                 ],
-                // 🛠️ THBT REMOVED: Motion text now stands alone
                 Text(
                   _displayPath,
                   textAlign: TextAlign.center,
