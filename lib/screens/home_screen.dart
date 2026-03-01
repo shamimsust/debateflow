@@ -5,7 +5,7 @@ import 'add_team_screen.dart';
 import 'standings_screen.dart'; 
 import 'pairing_screen.dart';
 import 'motion_reveal_screen.dart';
-import 'admin_motion_control.dart'; // ✅ Added this
+import 'admin_motion_control.dart'; 
 import 'setup_screen.dart'; 
 
 class HomeScreen extends StatefulWidget {
@@ -32,11 +32,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _listenToRoundStatus() {
+    // 🔗 Syncs the local _currentRound with the Admin's selection in Firebase
     FirebaseDatabase.instance
         .ref('tournaments/${widget.tournamentId}/currentRound')
         .onValue
         .listen((event) {
-      if (event.snapshot.exists) {
+      if (event.snapshot.exists && mounted) {
         setState(() => _currentRound = event.snapshot.value.toString());
       }
     });
@@ -71,7 +72,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- TOP STAT CARDS ---
             Row(
               children: [
                 _buildStatCard("Teams", teamsRef, Icons.groups_rounded),
@@ -87,7 +87,6 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.blueGrey, letterSpacing: 1.5)),
             const SizedBox(height: 15),
 
-            // --- NAVIGATION GRID ---
             GridView(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -95,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisCount: 2,
                 crossAxisSpacing: 15,
                 mainAxisSpacing: 15,
-                childAspectRatio: 1.1, // Adjusted for better label spacing
+                childAspectRatio: 1.1,
               ),
               children: [
                 _buildAdminCard(
@@ -130,7 +129,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (c) => SetupScreen(tournamentId: widget.tournamentId))),
                 ),
-                // 🔴 ADMIN MOTION CONTROL
                 _buildAdminCard(
                   title: "CA Panel",
                   subtitle: "Set Motion",
@@ -139,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (c) => AdminMotionControl(tournamentId: widget.tournamentId))),
                 ),
-                // 📺 MOTION REVEAL (The Big Screen view)
+                // 📺 FIXED MOTION REVEAL CARD
                 _buildAdminCard(
                   title: "Reveal",
                   subtitle: "Show Motion",
@@ -147,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Colors.amber.shade700,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (c) => MotionRevealScreen(
+                      // 🔥 Key forces the widget to rebuild when round changes
+                      key: ValueKey('reveal_round_$_currentRound'), 
                       tournamentId: widget.tournamentId, 
                       round: _currentRound,
                     ))),
@@ -159,6 +159,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // ... (Keeping your existing _buildStatCard and _buildAdminCard as they were)
 
   Widget _buildStatCard(String title, DatabaseReference ref, IconData icon) {
     return Expanded(
@@ -215,7 +217,6 @@ class _HomeScreenState extends State<HomeScreen> {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(15),
-            boxShadow: [BoxShadow(color: const Color(0xFF2264D7).withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 5))],
           ),
           child: Row(
             children: [
@@ -226,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text("ROUND $_currentRound STATUS", 
                     style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  Text(inProgress ? "Matches Live" : "Not Started", 
+                  Text(inProgress ? "Matches Live" : "Waiting for Pairings", 
                     style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               ),

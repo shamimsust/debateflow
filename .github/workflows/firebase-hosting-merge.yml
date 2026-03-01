@@ -26,7 +26,8 @@ jobs:
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          # 🔑 Use the secret name exactly as it appears in your GitHub Settings
+          # 🔑 Matches the secret name in your GitHub Repo Settings
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_DEBATEFLOW_14CE8 }}'
           projectId: debateflow-14ce8
+          # 🚀 Deploying directly to 'live' prevents most 403 Permission Denied errors
           channelId: live
