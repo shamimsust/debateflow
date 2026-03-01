@@ -4,20 +4,22 @@ import 'package:firebase_database/firebase_database.dart';
 
 class MotionRevealScreen extends StatelessWidget {
   final String tournamentId;
-  final String round; // Pass "1", "2", etc.
+  final String round;
 
   const MotionRevealScreen({super.key, required this.tournamentId, required this.round});
 
   @override
   Widget build(BuildContext context) {
-    // Standardizing the display name (e.g., "ROUND 1")
-    String displayRound = "ROUND ${round.replaceAll('round_', '').toUpperCase()}";
+    // Standardize path: remove existing 'round_' if present, then add it back
+    final String cleanId = round.toLowerCase().replaceAll('round_', '').replaceAll(' ', '_');
+    final String dbPath = 'motions/$tournamentId/round_$cleanId';
+    final String displayTitle = "ROUND ${cleanId.replaceAll('_', ' ').toUpperCase()}";
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(displayRound, style: const TextStyle(letterSpacing: 4, fontWeight: FontWeight.w300)),
+        title: Text(displayTitle, style: const TextStyle(letterSpacing: 4, fontWeight: FontWeight.w300)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -27,38 +29,31 @@ class MotionRevealScreen extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
         decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-            center: Alignment.center,
-            radius: 1.2,
-          ),
+          gradient: RadialGradient(colors: [Color(0xFF1E293B), Color(0xFF0F172A)], radius: 1.2),
         ),
         child: StreamBuilder<DatabaseEvent>(
-          // 🔗 MATCHED PATH: Updated to match MotionService 'round_$round'
-          stream: FirebaseDatabase.instance.ref('motions/$tournamentId/round_$round').onValue,
+          stream: FirebaseDatabase.instance.ref(dbPath).onValue,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: Color(0xFF46C3D7)));
             }
 
             if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-              return _buildWaitingState("MOTION NOT FOUND");
+              return _buildStateGui(Icons.search_off, "MOTION NOT FOUND", "Check Tournament ID or Round Selection");
             }
 
             final data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
             bool isReleased = data['is_released'] ?? false;
-            String motionText = data['text'] ?? "";
-            String? infoSlide = data['info_slide'];
-
+            
             return AnimatedSwitcher(
               duration: const Duration(milliseconds: 800),
               child: isReleased 
                 ? _MotionContent(
-                    key: ValueKey('content_$round'), // Key ensures animation resets per round
-                    motionText: motionText, 
-                    infoSlide: infoSlide
+                    key: ValueKey('active_$cleanId'),
+                    motionText: data['text'] ?? "",
+                    infoSlide: data['info_slide'],
                   ) 
-                : _buildWaitingState("AWAITING DECRYPTION..."),
+                : _buildStateGui(Icons.lock_outline_rounded, "ENCRYPTED DATA", "AWAITING DECRYPTION..."),
             );
           },
         ),
@@ -66,17 +61,16 @@ class MotionRevealScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildWaitingState(String subtext) {
+  Widget _buildStateGui(IconData icon, String title, String sub) {
     return Center(
-      key: const ValueKey('waiting'),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.lock_outline_rounded, size: 80, color: Color(0xFF46C3D7)),
+          Icon(icon, size: 80, color: const Color(0xFF46C3D7)),
           const SizedBox(height: 30),
-          const Text("ENCRYPTED DATA", style: TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 10, fontWeight: FontWeight.w900)),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 8, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
-          Text(subtext, style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10, letterSpacing: 2)),
+          Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10, letterSpacing: 2)),
         ],
       ),
     );
@@ -93,144 +87,72 @@ class _MotionContent extends StatefulWidget {
 }
 
 class _MotionContentState extends State<_MotionContent> {
-  String _displayPath = "";
+  String _typewriterText = "";
   int _charIndex = 0;
-  Timer? _typewriterTimer;
-
-  Timer? _countdownTimer;
-  int _secondsRemaining = 1800; 
-  bool _isClockRunning = false;
+  Timer? _timer;
+  int _seconds = 1800; 
+  bool _running = false;
 
   @override
   void initState() {
     super.initState();
-    _startTypewriter();
-  }
-
-  void _startTypewriter() {
     final fullText = widget.motionText.toUpperCase();
-    _typewriterTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
-      if (_charIndex < fullText.length) {
-        if (mounted) {
-          setState(() {
-            _displayPath += fullText[_charIndex];
-            _charIndex++;
-          });
-        }
-      } else {
-        timer.cancel();
-      }
+    Timer.periodic(const Duration(milliseconds: 40), (t) {
+      if (_charIndex < fullText.length && mounted) {
+        setState(() => _typewriterText += fullText[_charIndex++]);
+      } else { t.cancel(); }
     });
   }
 
-  void _toggleClock() {
-    if (_isClockRunning) {
-      _countdownTimer?.cancel();
-    } else {
-      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (_secondsRemaining > 0) {
-          if (mounted) setState(() => _secondsRemaining--);
-        } else {
-          timer.cancel();
-        }
+  void _toggle() {
+    setState(() => _running = !_running);
+    if (_running) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (_seconds > 0 && mounted) setState(() => _seconds--); else t.cancel();
       });
-    }
-    setState(() => _isClockRunning = !_isClockRunning);
-  }
-
-  String _formatTime(int seconds) {
-    int mins = seconds ~/ 60;
-    int secs = seconds % 60;
-    return "${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}";
+    } else { _timer?.cancel(); }
   }
 
   @override
-  void dispose() {
-    _typewriterTimer?.cancel();
-    _countdownTimer?.cancel();
-    super.dispose();
-  }
+  void dispose() { _timer?.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _toggleClock,
-        backgroundColor: _isClockRunning ? Colors.redAccent : const Color(0xFF46C3D7),
-        icon: Icon(_isClockRunning ? Icons.pause : Icons.play_arrow, color: Colors.white),
-        label: Text(_isClockRunning ? "PAUSE PREP" : "START PREP", 
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        onPressed: _toggle,
+        backgroundColor: _running ? Colors.redAccent : const Color(0xFF46C3D7),
+        label: Text(_running ? "PAUSE PREP" : "START PREP", style: const TextStyle(color: Colors.white)),
+        icon: Icon(_running ? Icons.pause : Icons.play_arrow, color: Colors.white),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (widget.infoSlide != null && widget.infoSlide!.isNotEmpty) ...[
-                  const Text("INFO SLIDE", style: TextStyle(color: Color(0xFF46C3D7), letterSpacing: 5, fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 15),
-                  Text(widget.infoSlide!, 
-                    textAlign: TextAlign.center, 
-                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16, fontStyle: FontStyle.italic)),
-                  const SizedBox(height: 50),
-                ],
-                Text(
-                  _displayPath,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white, 
-                    fontSize: 34, 
-                    fontWeight: FontWeight.w900, 
-                    height: 1.3, 
-                    shadows: [Shadow(color: Color(0xFF46C3D7), blurRadius: 15)]
-                  ),
-                ),
-                const SizedBox(height: 80),
-                _buildClockBadge(),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            children: [
+              if (widget.infoSlide?.isNotEmpty ?? false) ...[
+                const Text("INFO SLIDE", style: TextStyle(color: Color(0xFF46C3D7), letterSpacing: 5, fontSize: 12, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                Text(widget.infoSlide!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 16, fontStyle: FontStyle.italic)),
+                const SizedBox(height: 50),
               ],
-            ),
+              Text(_typewriterText, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900, shadows: [Shadow(color: Color(0xFF46C3D7), blurRadius: 20)])),
+              const SizedBox(height: 80),
+              _buildClock(),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildClockBadge() {
-    bool isFinished = _secondsRemaining == 0;
+  Widget _buildClock() {
+    String time = "${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}";
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-      decoration: BoxDecoration(
-        color: isFinished ? Colors.red.withOpacity(0.1) : const Color(0xFF46C3D7).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(50),
-        border: Border.all(color: isFinished ? Colors.red : const Color(0xFF46C3D7).withOpacity(0.3), width: 2),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.timer_sharp, color: isFinished ? Colors.red : const Color(0xFF46C3D7), size: 30),
-              const SizedBox(width: 15),
-              Text(
-                _formatTime(_secondsRemaining),
-                style: TextStyle(
-                  color: isFinished ? Colors.red : Colors.white, 
-                  fontWeight: FontWeight.w900, 
-                  fontSize: 40,
-                  fontFamily: 'Courier',
-                  letterSpacing: 4
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(isFinished ? "TIME UP!" : "PREPARATION TIME", 
-            style: TextStyle(color: isFinished ? Colors.red : const Color(0xFF46C3D7), fontSize: 10, letterSpacing: 3, fontWeight: FontWeight.bold)),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(50), border: Border.all(color: const Color(0xFF46C3D7).withOpacity(0.5))),
+      child: Text(time, style: const TextStyle(color: Colors.white, fontSize: 40, fontFamily: 'Courier', fontWeight: FontWeight.bold)),
     );
   }
 }
