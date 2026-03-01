@@ -14,24 +14,16 @@ class _SetupScreenState extends State<SetupScreen> {
   int _currentStep = 0;
   bool _isBusy = false;
 
-  // --- Rules State ---
   String selectedFormat = 'WSDC';
   int prelimRounds = 3;
 
-  // Mark Range Controllers
   final _minSubController = TextEditingController(text: "60");
   final _maxSubController = TextEditingController(text: "80");
   final _minReplyController = TextEditingController(text: "30");
   final _maxReplyController = TextEditingController(text: "40");
 
-  // Round Pairing Rules (Round Number -> Pairing Method)
-  Map<int, String> roundPairingRules = {
-    1: 'Random', 
-    2: 'Power Paired', 
-    3: 'Power Paired'
-  };
+  Map<int, String> roundPairingRules = {1: 'Random', 2: 'Power Paired', 3: 'Power Paired'};
 
-  // --- Validation Counters ---
   int teamCount = 0;
   int judgeCount = 0;
   int roomCount = 0;
@@ -56,22 +48,22 @@ class _SetupScreenState extends State<SetupScreen> {
         .ref('tournaments/${widget.tournamentId}')
         .get();
     
-    if (snapshot.exists) {
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
+    if (snapshot.exists && mounted) {
+      final data = Map<dynamic, dynamic>.from(snapshot.value as Map);
       setState(() {
-        selectedFormat = data['rule'] ?? 'WSDC';
-        prelimRounds = data['prelims'] ?? 3;
+        selectedFormat = data['rule']?.toString() ?? 'WSDC';
+        prelimRounds = int.tryParse(data['prelims']?.toString() ?? "3") ?? 3;
         
         if (data['settings'] != null) {
-          final s = data['settings'];
+          final s = Map<dynamic, dynamic>.from(data['settings']);
           _minSubController.text = s['minSubstantive']?.toString() ?? "60";
           _maxSubController.text = s['maxSubstantive']?.toString() ?? "80";
           _minReplyController.text = s['minReply']?.toString() ?? "30";
           _maxReplyController.text = s['maxReply']?.toString() ?? "40";
           
           if (s['pairingRules'] != null) {
-            Map rules = s['pairingRules'];
-            roundPairingRules = rules.map((k, v) => MapEntry(int.parse(k), v.toString()));
+            Map rules = s['pairingRules'] as Map;
+            roundPairingRules = rules.map((k, v) => MapEntry(int.parse(k.toString()), v.toString()));
           }
         }
       });
@@ -84,7 +76,6 @@ class _SetupScreenState extends State<SetupScreen> {
       for (int i = 1; i <= total; i++) {
         roundPairingRules.putIfAbsent(i, () => i == 1 ? 'Random' : 'Power Paired');
       }
-      // Remove rules for rounds that were decreased
       roundPairingRules.removeWhere((key, value) => key > total);
     });
   }
@@ -93,14 +84,11 @@ class _SetupScreenState extends State<SetupScreen> {
     setState(() => _isBusy = true);
     try {
       final db = FirebaseDatabase.instance.ref();
-      
-      // Convert Map keys to String for Firebase compatibility
-      Map<String, String> firebasePairingRules = 
-          roundPairingRules.map((k, v) => MapEntry(k.toString(), v));
+      Map<String, String> firebasePairingRules = roundPairingRules.map((k, v) => MapEntry(k.toString(), v));
 
       await db.child('tournaments/${widget.tournamentId}').update({
         'status': 'Active',
-        'currentRound': 1,
+        'currentRound': "1", // Saved as String for consistency
         'rule': selectedFormat,
         'prelims': prelimRounds,
         'lastUpdated': ServerValue.timestamp,
@@ -115,14 +103,10 @@ class _SetupScreenState extends State<SetupScreen> {
       });
 
       if (mounted) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (context) => HomeScreen(
-              tournamentId: widget.tournamentId, 
-              tournamentName: "Tournament Dashboard"
-            )
-          ),
+          MaterialPageRoute(builder: (context) => HomeScreen(tournamentId: widget.tournamentId, tournamentName: "Tournament Dashboard")),
+          (route) => false,
         );
       }
     } catch (e) {
@@ -138,59 +122,38 @@ class _SetupScreenState extends State<SetupScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("TOURNAMENT SETUP", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+        title: const Text("TOURNAMENT SETUP", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 16)),
         backgroundColor: const Color(0xFF2264D7),
         foregroundColor: Colors.white,
       ),
       body: _isBusy 
           ? const Center(child: CircularProgressIndicator())
-          : Stepper(
-              type: StepperType.horizontal,
-              currentStep: _currentStep,
-              onStepTapped: (step) => setState(() => _currentStep = step),
-              onStepContinue: () => setState(() => _currentStep < 3 ? _currentStep++ : null),
-              onStepCancel: () => setState(() => _currentStep > 0 ? _currentStep-- : null),
-              steps: [
-                Step(
-                  title: const Text("Rules"),
-                  isActive: _currentStep >= 0,
-                  content: _buildRulesStep(),
-                ),
-                Step(
-                  title: const Text("Teams"),
-                  isActive: _currentStep >= 1,
-                  content: _ListManager(
-                    ref: db.child('teams/${widget.tournamentId}'),
-                    label: "Team",
-                    onCountChanged: (count) => setState(() => teamCount = count),
-                  ),
-                ),
-                Step(
-                  title: const Text("Logistics"),
-                  isActive: _currentStep >= 2,
-                  content: Column(
-                    children: [
-                      _ListManager(
-                        ref: db.child('adjudicators/${widget.tournamentId}'),
-                        label: "Judge",
-                        onCountChanged: (count) => setState(() => judgeCount = count),
-                      ),
-                      const Divider(height: 30),
-                      _ListManager(
-                        ref: db.child('rooms/${widget.tournamentId}'),
-                        label: "Room",
-                        onCountChanged: (count) => setState(() => roomCount = count),
-                      ),
-                    ],
-                  ),
-                ),
-                Step(
-                  title: const Text("Launch"),
-                  isActive: _currentStep >= 3,
-                  content: _buildLaunchStep(),
-                ),
-              ],
+          : Theme(
+              data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF2264D7))),
+              child: Stepper(
+                type: StepperType.horizontal,
+                currentStep: _currentStep,
+                onStepTapped: (step) => setState(() => _currentStep = step),
+                onStepContinue: () => setState(() => _currentStep < 3 ? _currentStep++ : null),
+                onStepCancel: () => setState(() => _currentStep > 0 ? _currentStep-- : null),
+                steps: [
+                  Step(title: const Text("Rules"), isActive: _currentStep >= 0, content: _buildRulesStep()),
+                  Step(title: const Text("Teams"), isActive: _currentStep >= 1, content: _ListManager(ref: db.child('teams/${widget.tournamentId}'), label: "Team", onCountChanged: (count) { if(mounted) setState(() => teamCount = count); })),
+                  Step(title: const Text("Logistics"), isActive: _currentStep >= 2, content: _buildLogisticsStep(db)),
+                  Step(title: const Text("Launch"), isActive: _currentStep >= 3, content: _buildLaunchStep()),
+                ],
+              ),
             ),
+    );
+  }
+
+  Widget _buildLogisticsStep(DatabaseReference db) {
+    return Column(
+      children: [
+        _ListManager(ref: db.child('adjudicators/${widget.tournamentId}'), label: "Judge", onCountChanged: (count) { if(mounted) setState(() => judgeCount = count); }),
+        const Divider(height: 40),
+        _ListManager(ref: db.child('rooms/${widget.tournamentId}'), label: "Room", onCountChanged: (count) { if(mounted) setState(() => roomCount = count); }),
+      ],
     );
   }
 
@@ -200,138 +163,82 @@ class _SetupScreenState extends State<SetupScreen> {
       children: [
         DropdownButtonFormField<String>(
           value: selectedFormat,
-          decoration: const InputDecoration(labelText: "Debate Format", border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: "Format", border: OutlineInputBorder()),
           items: ['WSDC', 'BP', 'AP'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: (val) => setState(() => selectedFormat = val!),
         ),
         const SizedBox(height: 20),
-        const Text("MARK RANGES", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF2264D7))),
+        const Text("SPEAKER SCORE RANGES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2264D7))),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(child: _buildRangeInput("Min Sub", _minSubController)),
-            const SizedBox(width: 10),
-            Expanded(child: _buildRangeInput("Max Sub", _maxSubController)),
-          ],
-        ),
+        Row(children: [Expanded(child: _buildRangeInput("Min Sub", _minSubController)), const SizedBox(width: 10), Expanded(child: _buildRangeInput("Max Sub", _maxSubController))]),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(child: _buildRangeInput("Min Reply", _minReplyController)),
-            const SizedBox(width: 10),
-            Expanded(child: _buildRangeInput("Max Reply", _maxReplyController)),
-          ],
-        ),
+        Row(children: [Expanded(child: _buildRangeInput("Min Reply", _minReplyController)), const SizedBox(width: 10), Expanded(child: _buildRangeInput("Max Reply", _maxReplyController))]),
         const SizedBox(height: 25),
         Text("Preliminary Rounds: $prelimRounds", style: const TextStyle(fontWeight: FontWeight.bold)),
-        Slider(
-          value: prelimRounds.toDouble(), min: 1, max: 8, divisions: 7,
-          activeColor: const Color(0xFF2264D7),
-          onChanged: (v) => _updateRoundRules(v.toInt()),
-        ),
+        Slider(value: prelimRounds.toDouble(), min: 1, max: 8, divisions: 7, activeColor: const Color(0xFF2264D7), onChanged: (v) => _updateRoundRules(v.toInt())),
         const Divider(),
-        const Text("PAIRING PER ROUND", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF2264D7))),
-        const SizedBox(height: 10),
-        ...List.generate(prelimRounds, (index) {
-          int roundNum = index + 1;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Round $roundNum:"),
-                DropdownButton<String>(
-                  value: roundPairingRules[roundNum],
-                  items: ['Random', 'Power Paired'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                  onChanged: (val) => setState(() => roundPairingRules[roundNum] = val!),
-                ),
-              ],
+        ...roundPairingRules.keys.map((roundNum) => Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Round $roundNum:"),
+            DropdownButton<String>(
+              value: roundPairingRules[roundNum],
+              items: ['Random', 'Power Paired'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              onChanged: (val) => setState(() => roundPairingRules[roundNum] = val!),
             ),
-          );
-        }),
+          ],
+        )).toList(),
       ],
     );
   }
 
   Widget _buildRangeInput(String label, TextEditingController ctrl) {
-    return TextField(
-      controller: ctrl,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(labelText: label, isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
-    );
+    return TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: label, isDense: true, border: OutlineInputBorder()));
   }
 
   Widget _buildLaunchStep() {
-    bool canLaunch = teamCount >= 2 && roomCount >= 1;
+    bool canLaunch = teamCount >= 2 && judgeCount >= 1 && roomCount >= (teamCount / 2).ceil();
     return Column(
       children: [
-        const Icon(Icons.rocket_launch, size: 50, color: Color(0xFF2264D7)),
-        const SizedBox(height: 10),
-        _buildValidationTile("Teams Added ($teamCount/2+)", teamCount >= 2),
-        _buildValidationTile("Judges Added ($judgeCount/1+)", judgeCount >= 1),
-        _buildValidationTile("Rooms Added ($roomCount/1+)", roomCount >= 1),
+        const Icon(Icons.rocket_launch_rounded, size: 60, color: Colors.green),
         const SizedBox(height: 20),
+        _buildValidationTile("Teams ($teamCount/2+)", teamCount >= 2),
+        _buildValidationTile("Judges ($judgeCount/1+)", judgeCount >= 1),
+        _buildValidationTile("Rooms ($roomCount needed)", roomCount >= (teamCount / 2).ceil()),
+        const SizedBox(height: 30),
         ElevatedButton(
           onPressed: canLaunch ? _launchTournament : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green, foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey.shade300,
-            minimumSize: const Size(double.infinity, 50),
-          ),
-          child: const Text("FINALIZE & START TOURNAMENT", style: TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          child: const Text("INITIALIZE TOURNAMENT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
       ],
     );
   }
 
   Widget _buildValidationTile(String text, bool isValid) {
-    return ListTile(
-      visualDensity: VisualDensity.compact,
-      leading: Icon(isValid ? Icons.check_circle : Icons.cancel, color: isValid ? Colors.green : Colors.red, size: 20),
-      title: Text(text, style: const TextStyle(fontSize: 14)),
-    );
+    return ListTile(leading: Icon(isValid ? Icons.check_circle : Icons.error_outline, color: isValid ? Colors.green : Colors.orange), title: Text(text));
   }
 }
 
-// --- REUSABLE LIST MANAGER ---
 class _ListManager extends StatefulWidget {
   final DatabaseReference ref;
   final String label;
   final Function(int) onCountChanged;
 
-  // Change this line:
   const _ListManager({required this.ref, required this.label, required this.onCountChanged}); 
-  // Removed super.key and the 'key' parameter
   
   @override
   State<_ListManager> createState() => _ListManagerState();
 }
 
 class _ListManagerState extends State<_ListManager> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  final TextEditingController _controller = TextEditingController();
 
   void _addItem() {
     String name = _controller.text.trim();
     if (name.isNotEmpty) {
-      widget.ref.push().set({
-        'name': name,
-        'wins': 0,
-        'totalMarks': 0,
-      });
+      widget.ref.push().set({'name': name, 'wins': 0, 'totalMarks': 0});
       _controller.clear();
-      FocusScope.of(context).unfocus(); // Hides keyboard
     }
   }
 
@@ -341,47 +248,35 @@ class _ListManagerState extends State<_ListManager> {
       children: [
         Row(
           children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: InputDecoration(
-                  hintText: "Enter ${widget.label} Name", 
-                  isDense: true, 
-                  border: const OutlineInputBorder()
-                ),
-                onSubmitted: (_) => _addItem(),
-              ),
-            ),
+            Expanded(child: TextField(controller: _controller, decoration: InputDecoration(hintText: "Add ${widget.label}...", border: const OutlineInputBorder()))),
             const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.add_circle, color: Color(0xFF2264D7), size: 32), 
-              onPressed: _addItem
-            ),
+            IconButton(icon: const Icon(Icons.add_box, size: 40, color: Color(0xFF2264D7)), onPressed: _addItem),
           ],
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: 200,
+        Container(
+          height: 180,
+          decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
           child: StreamBuilder(
             stream: widget.ref.onValue,
             builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
               if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                Future.microtask(() => widget.onCountChanged(0));
-                return const Center(child: Text("No items added yet", style: TextStyle(color: Colors.grey, fontSize: 12)));
+                // 🛡️ Safe callback to parent
+                Future.microtask(() { if(mounted) widget.onCountChanged(0); });
+                return const Center(child: Text("Empty", style: TextStyle(color: Colors.grey)));
               }
               
-              Map data = snapshot.data!.snapshot.value as Map;
-              Future.microtask(() => widget.onCountChanged(data.length));
+              final Map data = snapshot.data!.snapshot.value as Map;
+              // 🛡️ Safe callback to parent
+              Future.microtask(() { if(mounted) widget.onCountChanged(data.length); });
               
               return ListView(
+                padding: const EdgeInsets.all(4),
                 children: data.entries.map((e) => Card(
                   child: ListTile(
                     dense: true,
-                    title: Text(e.value['name'] ?? ""),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 20), 
-                      onPressed: () => widget.ref.child(e.key).remove()
-                    ),
+                    title: Text(e.value['name']?.toString() ?? ""),
+                    trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => widget.ref.child(e.key).remove()),
                   ),
                 )).toList(),
               );
