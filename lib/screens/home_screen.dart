@@ -36,9 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
         .onValue
         .listen((event) {
       if (event.snapshot.exists && mounted) {
+        // 🛡️ Safe Parsing: Handles both int and String from Firebase
         setState(() => _currentRound = event.snapshot.value.toString());
       }
-    });
+    }, onError: (err) => debugPrint("DB Error: $err"));
   }
 
   @override
@@ -65,85 +66,83 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      // 🚀 FIXED: Added a simple ScrollView with correct constraints
+      body: ListView( 
         padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _buildStatCard("Teams", teamsRef, Icons.groups_rounded),
-                const SizedBox(width: 12),
-                _buildStatCard("Judges", judgesRef, Icons.gavel_rounded),
-              ],
-            ),
-            const SizedBox(height: 15),
-            _buildStatusCard(matchesRef),
-            
-            const SizedBox(height: 30),
-            const Text("TOURNAMENT MANAGEMENT", 
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.blueGrey, letterSpacing: 1.5)),
-            const SizedBox(height: 15),
+        children: [
+          Row(
+            children: [
+              _buildStatCard("Teams", teamsRef, Icons.groups_rounded),
+              const SizedBox(width: 12),
+              _buildStatCard("Judges", judgesRef, Icons.gavel_rounded),
+            ],
+          ),
+          const SizedBox(height: 15),
+          _buildStatusCard(matchesRef),
+          
+          const SizedBox(height: 30),
+          const Text("TOURNAMENT MANAGEMENT", 
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.5)),
+          const SizedBox(height: 15),
 
-            GridView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 15,
-                mainAxisSpacing: 15,
-                childAspectRatio: 1.1,
+          // 🛠️ The GridView fix: shrinkWrap + NeverScrollableScrollPhysics
+          GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 15,
+            mainAxisSpacing: 15,
+            childAspectRatio: 1.1,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(), 
+            children: [
+              _buildAdminCard(
+                title: "Teams",
+                subtitle: "Registration",
+                icon: Icons.person_add_alt_1,
+                color: Colors.blue,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => AddTeamScreen(tournamentId: widget.tournamentId))),
               ),
-              children: [
-                _buildAdminCard(
-                  title: "Teams",
-                  subtitle: "Registration",
-                  icon: Icons.person_add_alt_1,
-                  color: Colors.blue,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => AddTeamScreen(tournamentId: widget.tournamentId))),
-                ),
-                _buildAdminCard(
-                  title: "Pairings",
-                  subtitle: "Round $_currentRound",
-                  icon: Icons.account_tree_rounded,
-                  color: Colors.indigo,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => PairingScreen(tournamentId: widget.tournamentId))),
-                ),
-                _buildAdminCard(
-                  title: "Standings",
-                  subtitle: "Rankings",
-                  icon: Icons.leaderboard_rounded,
-                  color: Colors.orange,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => StandingsScreen(tournamentId: widget.tournamentId))),
-                ),
-                _buildAdminCard(
-                  title: "Setup",
-                  subtitle: "Rules & Rooms",
-                  icon: Icons.settings_suggest_rounded,
-                  color: Colors.blueGrey,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => SetupScreen(tournamentId: widget.tournamentId))),
-                ),
-                // 🛑 REPLACED: This is now the only way to access Motion settings and Reveal
-                _buildAdminCard(
-                  title: "Motion Control",
-                  subtitle: "Set & Reveal",
-                  icon: Icons.bolt_rounded,
-                  color: Colors.amber.shade800,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (c) => AdminMotionControl(tournamentId: widget.tournamentId))),
-                ),
-              ],
-            ),
-            const SizedBox(height: 40),
-          ],
-        ),
+              _buildAdminCard(
+                title: "Pairings",
+                subtitle: "Round $_currentRound",
+                icon: Icons.account_tree_rounded,
+                color: Colors.indigo,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => PairingScreen(tournamentId: widget.tournamentId))),
+              ),
+              _buildAdminCard(
+                title: "Standings",
+                subtitle: "Rankings",
+                icon: Icons.leaderboard_rounded,
+                color: Colors.orange,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => StandingsScreen(tournamentId: widget.tournamentId))),
+              ),
+              _buildAdminCard(
+                title: "Setup",
+                subtitle: "Rules & Rooms",
+                icon: Icons.settings_suggest_rounded,
+                color: Colors.blueGrey,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => SetupScreen(tournamentId: widget.tournamentId))),
+              ),
+              _buildAdminCard(
+                title: "Motion Control",
+                subtitle: "Set & Reveal",
+                icon: Icons.bolt_rounded,
+                color: Colors.amber.shade800,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => AdminMotionControl(tournamentId: widget.tournamentId))),
+              ),
+            ],
+          ),
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }
+
+  // --- UI COMPONENTS (KEEPING YOUR EXISTING LOGIC) ---
 
   Widget _buildStatCard(String title, DatabaseReference ref, IconData icon) {
     return Expanded(
