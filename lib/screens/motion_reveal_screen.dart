@@ -16,6 +16,9 @@ class MotionRevealScreen extends StatelessWidget {
     final String displayTitle = "ROUND ${cleanId.replaceAll('_', ' ').toUpperCase()}";
 
     return Scaffold(
+      // 🔑 THE FIX: Using a Key based on the path forces the StreamBuilder to 
+      // KILL the old round's stream and START the new one immediately.
+      key: ValueKey(dbPath), 
       backgroundColor: const Color(0xFF0F172A),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -39,7 +42,7 @@ class MotionRevealScreen extends StatelessWidget {
             }
 
             if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-              return _buildStateGui(Icons.search_off, "MOTION NOT FOUND", "Check Tournament ID or Round Selection");
+              return _buildStateGui(Icons.search_off, "MOTION NOT FOUND", "Waiting for Admin to set Round $cleanId");
             }
 
             final data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
@@ -49,7 +52,7 @@ class MotionRevealScreen extends StatelessWidget {
               duration: const Duration(milliseconds: 800),
               child: isReleased 
                 ? _MotionContent(
-                    key: ValueKey('active_$cleanId'),
+                    key: ValueKey('content_$dbPath'), 
                     motionText: data['text'] ?? "",
                     infoSlide: data['info_slide'],
                   ) 
@@ -77,6 +80,8 @@ class MotionRevealScreen extends StatelessWidget {
   }
 }
 
+// --- 🔽 THIS IS THE PART THAT WAS MISSING 🔽 ---
+
 class _MotionContent extends StatefulWidget {
   final String motionText;
   final String? infoSlide;
@@ -89,32 +94,53 @@ class _MotionContent extends StatefulWidget {
 class _MotionContentState extends State<_MotionContent> {
   String _typewriterText = "";
   int _charIndex = 0;
-  Timer? _timer;
+  Timer? _countdownTimer;
+  Timer? _typewriterTimer;
   int _seconds = 1800; 
   bool _running = false;
 
   @override
   void initState() {
     super.initState();
+    _initMotionDisplay();
+  }
+
+  void _initMotionDisplay() {
+    _typewriterTimer?.cancel();
+    _typewriterText = "";
+    _charIndex = 0;
+
     final fullText = widget.motionText.toUpperCase();
-    Timer.periodic(const Duration(milliseconds: 40), (t) {
+    _typewriterTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
       if (_charIndex < fullText.length && mounted) {
         setState(() => _typewriterText += fullText[_charIndex++]);
-      } else { t.cancel(); }
+      } else { 
+        t.cancel(); 
+      }
     });
   }
 
   void _toggle() {
     setState(() => _running = !_running);
     if (_running) {
-      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-        if (_seconds > 0 && mounted) setState(() => _seconds--); else t.cancel();
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (_seconds > 0 && mounted) {
+          setState(() => _seconds--);
+        } else { 
+          t.cancel(); 
+        }
       });
-    } else { _timer?.cancel(); }
+    } else { 
+      _countdownTimer?.cancel(); 
+    }
   }
 
   @override
-  void dispose() { _timer?.cancel(); super.dispose(); }
+  void dispose() { 
+    _countdownTimer?.cancel(); 
+    _typewriterTimer?.cancel();
+    super.dispose(); 
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -123,21 +149,36 @@ class _MotionContentState extends State<_MotionContent> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _toggle,
         backgroundColor: _running ? Colors.redAccent : const Color(0xFF46C3D7),
-        label: Text(_running ? "PAUSE PREP" : "START PREP", style: const TextStyle(color: Colors.white)),
+        label: Text(_running ? "PAUSE PREP" : "START PREP", 
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         icon: Icon(_running ? Icons.pause : Icons.play_arrow, color: Colors.white),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (widget.infoSlide?.isNotEmpty ?? false) ...[
-                const Text("INFO SLIDE", style: TextStyle(color: Color(0xFF46C3D7), letterSpacing: 5, fontSize: 12, fontWeight: FontWeight.bold)),
+              if (widget.infoSlide != null && widget.infoSlide!.isNotEmpty) ...[
+                const Text("INFO SLIDE", 
+                  style: TextStyle(color: Color(0xFF46C3D7), letterSpacing: 5, fontSize: 12, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
-                Text(widget.infoSlide!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 16, fontStyle: FontStyle.italic)),
+                Text(widget.infoSlide!, 
+                  textAlign: TextAlign.center, 
+                  style: const TextStyle(color: Colors.white70, fontSize: 16, fontStyle: FontStyle.italic)),
                 const SizedBox(height: 50),
               ],
-              Text(_typewriterText, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900, shadows: [Shadow(color: Color(0xFF46C3D7), blurRadius: 20)])),
+              Text(
+                _typewriterText, 
+                textAlign: TextAlign.center, 
+                style: const TextStyle(
+                  color: Colors.white, 
+                  fontSize: 34, 
+                  fontWeight: FontWeight.w900, 
+                  height: 1.3,
+                  shadows: [Shadow(color: Color(0xFF46C3D7), blurRadius: 20)]
+                )
+              ),
               const SizedBox(height: 80),
               _buildClock(),
             ],
@@ -151,8 +192,20 @@ class _MotionContentState extends State<_MotionContent> {
     String time = "${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}";
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(50), border: Border.all(color: const Color(0xFF46C3D7).withOpacity(0.5))),
-      child: Text(time, style: const TextStyle(color: Colors.white, fontSize: 40, fontFamily: 'Courier', fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(50), 
+        border: Border.all(color: const Color(0xFF46C3D7).withOpacity(0.5))
+      ),
+      child: Text(
+        time, 
+        style: const TextStyle(
+          color: Colors.white, 
+          fontSize: 40, 
+          fontFamily: 'Courier', 
+          fontWeight: FontWeight.bold,
+          letterSpacing: 4
+        )
+      ),
     );
   }
 }

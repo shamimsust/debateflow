@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_database/firebase_database.dart'; // Needed for direct fetch
 import '../services/motion_service.dart';
+import 'motion_reveal_screen.dart'; // Ensure this import exists
 
 class AdminMotionControl extends StatefulWidget {
   final String tournamentId;
@@ -14,6 +16,35 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
   final _motionController = TextEditingController();
   final _infoController = TextEditingController();
   String _selectedRound = "1";
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingData(); // Load data for Round 1 on startup
+  }
+
+  // 🛠️ FIX: Fetch data when switching rounds so you don't overwrite Round 2 with Round 1 text
+  void _loadExistingData() async {
+    setState(() => _isLoading = true);
+    
+    final cleanRound = _selectedRound.toLowerCase().replaceAll(' ', '_');
+    final ref = FirebaseDatabase.instance
+        .ref('motions/${widget.tournamentId}/round_$cleanRound');
+
+    final snapshot = await ref.get();
+
+    if (snapshot.exists) {
+      final data = Map<dynamic, dynamic>.from(snapshot.value as Map);
+      _motionController.text = data['text'] ?? "";
+      _infoController.text = data['info_slide'] ?? "";
+    } else {
+      _motionController.clear();
+      _infoController.clear();
+    }
+    
+    if (mounted) setState(() => _isLoading = false);
+  }
 
   @override
   void dispose() {
@@ -28,7 +59,6 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
       return;
     }
     
-    // Saves to Firebase but keeps 'is_released' as false
     await context.read<MotionService>().setMotion(
       tId: widget.tournamentId,
       round: _selectedRound,
@@ -38,7 +68,7 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Motion for Round $_selectedRound Saved (Draft)"))
+        SnackBar(content: Text("Motion for Round $_selectedRound Saved"))
       );
     }
   }
@@ -49,12 +79,11 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
       return;
     }
 
-    // Confirmation Dialog
     bool confirm = await showDialog(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text("RELEASE MOTION?"),
-        content: Text("This will reveal the Round $_selectedRound motion to ALL participants immediately. This cannot be undone."),
+        content: Text("Reveal Round $_selectedRound motion to ALL participants?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("CANCEL")),
           ElevatedButton(
@@ -67,7 +96,7 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
     ) ?? false;
 
     if (confirm && mounted) {
-      // First save it to ensure the text is current
+      // 1. Save current text to ensure the release contains the latest edits
       await context.read<MotionService>().setMotion(
         tId: widget.tournamentId,
         round: _selectedRound,
@@ -75,12 +104,19 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
         infoSlide: _infoController.text.trim(),
       );
       
-      // Then trigger the release_time and is_released flag
+      // 2. Set is_released to true
       await context.read<MotionService>().releaseMotion(widget.tournamentId, _selectedRound);
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: Colors.green, content: Text("MOTION IS NOW LIVE!"))
+        // 3. 🚀 THE REDIRECT FIX: Navigate to the reveal page with the CORRECT round
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MotionRevealScreen(
+              tournamentId: widget.tournamentId, 
+              round: _selectedRound, // Passes "1", "2", etc.
+            ),
+          ),
         );
       }
     }
@@ -101,14 +137,14 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
+      body: _isLoading 
+      ? const Center(child: CircularProgressIndicator())
+      : SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("ROUND SELECTION", 
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.blueGrey, letterSpacing: 1.2)),
-            const SizedBox(height: 8),
+            _buildLabel("ROUND SELECTION"),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
@@ -119,7 +155,10 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
                   items: ["1", "2", "3", "4", "5", "Semi-Final", "Grand Final"]
                       .map((r) => DropdownMenuItem(value: r, child: Text("Round $r")))
                       .toList(),
-                  onChanged: (v) => setState(() => _selectedRound = v!),
+                  onChanged: (v) {
+                    setState(() => _selectedRound = v!);
+                    _loadExistingData(); // 🔥 Update text fields when round changes
+                  },
                 ),
               ),
             ),
@@ -138,7 +177,7 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
               controller: _motionController,
               maxLines: 6,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, height: 1.4),
-              decoration: _inputStyle("e.g., THBT we should abolish standardized testing."),
+              decoration: _inputStyle("Enter motion..."),
             ),
             
             const SizedBox(height: 40),
@@ -149,10 +188,9 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
                     onPressed: _handleSave,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 18),
-                      side: const BorderSide(color: Color(0xFF1E293B)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text("SAVE DRAFT", style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+                    child: const Text("SAVE DRAFT"),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -163,20 +201,12 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 18),
-                      elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text("RELEASE NOW", style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text("RELEASE NOW"),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 20),
-            const Center(
-              child: Text(
-                "Warning: Releasing will notify all users and start prep timers.",
-                style: TextStyle(color: Colors.grey, fontSize: 11),
-              ),
             ),
           ],
         ),
@@ -190,15 +220,13 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-      contentPadding: const EdgeInsets.all(16),
     );
   }
 
   Widget _buildLabel(String label) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.blueGrey, letterSpacing: 1.2)),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.blueGrey)),
     );
   }
 }
