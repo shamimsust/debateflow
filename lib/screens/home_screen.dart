@@ -36,7 +36,6 @@ class _HomeScreenState extends State<HomeScreen> {
         .onValue
         .listen((event) {
       if (event.snapshot.exists && mounted) {
-        // 🛡️ Safe Parsing: Handles both int and String from Firebase
         setState(() => _currentRound = event.snapshot.value.toString());
       }
     }, onError: (err) => debugPrint("DB Error: $err"));
@@ -66,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // 🚀 FIXED: Added a simple ScrollView with correct constraints
       body: ListView( 
         padding: const EdgeInsets.all(20.0),
         children: [
@@ -85,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.5)),
           const SizedBox(height: 15),
 
-          // 🛠️ The GridView fix: shrinkWrap + NeverScrollableScrollPhysics
           GridView.count(
             crossAxisCount: 2,
             crossAxisSpacing: 15,
@@ -94,30 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(), 
             children: [
-              _buildAdminCard(
-                title: "Teams",
-                subtitle: "Registration",
-                icon: Icons.person_add_alt_1,
-                color: Colors.blue,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (c) => AddTeamScreen(tournamentId: widget.tournamentId))),
-              ),
-              _buildAdminCard(
-                title: "Pairings",
-                subtitle: "Round $_currentRound",
-                icon: Icons.account_tree_rounded,
-                color: Colors.indigo,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (c) => PairingScreen(tournamentId: widget.tournamentId))),
-              ),
-              _buildAdminCard(
-                title: "Standings",
-                subtitle: "Rankings",
-                icon: Icons.leaderboard_rounded,
-                color: Colors.orange,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (c) => StandingsScreen(tournamentId: widget.tournamentId))),
-              ),
+              // 1️⃣ Setup (Now First)
               _buildAdminCard(
                 title: "Setup",
                 subtitle: "Rules & Rooms",
@@ -126,6 +100,34 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.push(context, MaterialPageRoute(
                   builder: (c) => SetupScreen(tournamentId: widget.tournamentId))),
               ),
+              // 2️⃣ Teams
+              _buildAdminCard(
+                title: "Teams",
+                subtitle: "Registration",
+                icon: Icons.person_add_alt_1,
+                color: Colors.blue,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => AddTeamScreen(tournamentId: widget.tournamentId))),
+              ),
+              // 3️⃣ Pairings
+              _buildAdminCard(
+                title: "Pairings",
+                subtitle: "Round $_currentRound",
+                icon: Icons.account_tree_rounded,
+                color: Colors.indigo,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => PairingScreen(tournamentId: widget.tournamentId))),
+              ),
+              // 4️⃣ Standings
+              _buildAdminCard(
+                title: "Standings",
+                subtitle: "Rankings",
+                icon: Icons.leaderboard_rounded,
+                color: Colors.orange,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => StandingsScreen(tournamentId: widget.tournamentId))),
+              ),
+              // 5️⃣ Motion Control
               _buildAdminCard(
                 title: "Motion Control",
                 subtitle: "Set & Reveal",
@@ -142,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- UI COMPONENTS (KEEPING YOUR EXISTING LOGIC) ---
+  // --- UI COMPONENTS ---
 
   Widget _buildStatCard(String title, DatabaseReference ref, IconData icon) {
     return Expanded(
