@@ -7,9 +7,112 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
+// --- MODELS ---
+class TeamStanding {
+  final String teamName;
+  final double wins; // For BP, this acts as Total Rank Points
+  final double totalMarks;
+  TeamStanding({required this.teamName, required this.wins, required this.totalMarks});
+}
+
+class SpeakerStanding {
+  final String speakerName;
+  final String teamName;
+  final double totalSubstantivePoints;
+  final int matchesPlayed;
+
+  SpeakerStanding({
+    required this.speakerName, 
+    required this.teamName, 
+    required this.totalSubstantivePoints, 
+    required this.matchesPlayed
+  });
+
+  double get averageScore => matchesPlayed == 0 ? 0 : totalSubstantivePoints / matchesPlayed;
+}
+
+class _MatchPerformance {
+  final String name;
+  final String team;
+  final double score;
+  _MatchPerformance({required this.name, required this.team, required this.score});
+}
+
+// --- MAIN STANDINGS SCREEN ---
+class StandingsScreen extends StatefulWidget {
+  final String tournamentId;
+  const StandingsScreen({super.key, required this.tournamentId});
+
+  @override
+  State<StandingsScreen> createState() => _StandingsScreenState();
+}
+
+class _StandingsScreenState extends State<StandingsScreen> {
+  String _searchQuery = "";
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF1F5F9),
+        appBar: AppBar(
+          title: const Text("TOURNAMENT RANKINGS", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+          backgroundColor: const Color(0xFF2264D7),
+          foregroundColor: Colors.white,
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (context) => PublicResultsScreen(tournamentId: widget.tournamentId))
+              ),
+              icon: const Icon(Icons.public, color: Colors.white, size: 18),
+              label: const Text("LIVE FEED", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 8),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(110),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: TextField(
+                    onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: "Search Team or Speaker...",
+                      hintStyle: const TextStyle(color: Colors.white60),
+                      prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.1),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const TabBar(
+                  indicatorColor: Colors.white,
+                  tabs: [Tab(text: "TEAMS"), Tab(text: "SPEAKERS")],
+                ),
+              ],
+            ),
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _TeamRankingsTab(tournamentId: widget.tournamentId, query: _searchQuery),
+            _SpeakerRankingsTab(tournamentId: widget.tournamentId, query: _searchQuery),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- PUBLIC RESULTS FEED (Detailed View) ---
 class PublicResultsScreen extends StatefulWidget {
   final String tournamentId;
-
   const PublicResultsScreen({super.key, required this.tournamentId});
 
   @override
@@ -19,180 +122,239 @@ class PublicResultsScreen extends StatefulWidget {
 class _PublicResultsScreenState extends State<PublicResultsScreen> {
   final ScreenshotController screenshotController = ScreenshotController();
 
-  // 🛠️ Share logic specific to this results page
   void _sharePublicLink() {
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
     final String shareUrl = "$baseUrl/#/results?tid=${widget.tournamentId}";
-    
     Clipboard.setData(ClipboardData(text: shareUrl));
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Results link copied to clipboard!"),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  Future<void> _exportAndShareImage() async {
-    try {
-      final Uint8List? imageBytes = await screenshotController.capture();
-      if (imageBytes != null) {
-        if (kIsWeb) {
-          _sharePublicLink();
-        } else {
-          final directory = await getTemporaryDirectory();
-          final file = await File('${directory.path}/official_results.png').create();
-          await file.writeAsBytes(imageBytes);
-          await Share.shareXFiles([XFile(file.path)], text: 'Tournament Official Results');
-        }
-      }
-    } catch (e) {
-      debugPrint("Export Error: $e");
-    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Public link copied!"), backgroundColor: Colors.green));
   }
 
   @override
   Widget build(BuildContext context) {
     final ballotsRef = FirebaseDatabase.instance.ref('ballots/${widget.tournamentId}');
-
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        title: const Text("OFFICIAL RESULTS", 
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.1)),
-        backgroundColor: const Color(0xFF2264D7),
+        title: const Text("OFFICIAL BALLOTS"),
+        backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
-        centerTitle: true,
         actions: [
-          IconButton(
-            tooltip: "Copy Link",
-            icon: const Icon(Icons.link_rounded),
-            onPressed: _sharePublicLink,
-          ),
-          IconButton(
-            tooltip: "Share Image",
-            icon: const Icon(Icons.image_rounded),
-            onPressed: _exportAndShareImage,
-          ),
-          const SizedBox(width: 8),
+          IconButton(icon: const Icon(Icons.link_rounded), onPressed: _sharePublicLink),
         ],
       ),
-      body: Screenshot(
-        controller: screenshotController,
-        child: Container(
-          color: const Color(0xFFF1F5F9), // Ensure background is solid for screenshots
-          child: StreamBuilder(
-            stream: ballotsRef.onValue,
-            builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+      body: StreamBuilder(
+        stream: ballotsRef.onValue,
+        builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+          if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for ballots..."));
+          
+          Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+          List<MapEntry> ballotList = data.entries.toList();
+          ballotList.sort((a, b) => (b.value['round'] ?? 0).compareTo(a.value['round'] ?? 0));
 
-              if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                return _buildEmptyState();
-              }
-
-              Map data = snapshot.data!.snapshot.value as Map;
-              List<MapEntry> ballotList = data.entries.toList();
-              
-              // Sort by round (Newest rounds first)
-              ballotList.sort((a, b) {
-                var roundA = a.value['round'] ?? 0;
-                var roundB = b.value['round'] ?? 0;
-                return roundB.compareTo(roundA);
-              });
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: ballotList.length,
-                itemBuilder: (context, index) {
-                  final ballotData = ballotList[index].value;
-                  return _buildResultCard(ballotData);
-                },
-              );
-            },
-          ),
-        ),
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: ballotList.length,
+            itemBuilder: (context, index) => _buildBallotCard(ballotList[index].value),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildResultCard(dynamic data) {
-    Map results = data['results'] as Map;
-    int round = data['round'] ?? 0;
+  Widget _buildBallotCard(dynamic data) {
+    Map results = Map<dynamic, dynamic>.from(data['results'] as Map);
+    var sortedTeams = results.entries.toList();
+    sortedTeams.sort((a, b) => (a.value['rank'] ?? 0).compareTo(b.value['rank'] ?? 0));
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("ROUND $round", 
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF2264D7), fontSize: 12)),
-                const Icon(Icons.verified, color: Colors.blue, size: 16),
-              ],
-            ),
-            const Divider(height: 20),
-            ...results.entries.map((e) {
-              bool isWinner = e.value['rank'] == 1;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(e.value['teamName'], 
-                        style: TextStyle(
-                          fontWeight: isWinner ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 16,
-                          color: isWinner ? Colors.black : Colors.black54
-                        )),
-                    ),
-                    if (isWinner) 
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50, 
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.green.shade200)
-                        ),
-                        child: const Text("WINNER", 
-                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10)),
-                      )
-                    else
-                      Text("${e.value['total']} pts", 
-                        style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                  ],
-                ),
-              );
-            }).toList(),
-          ],
-        ),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          ListTile(
+            tileColor: Colors.grey.shade50,
+            title: Text("ROUND ${data['round']} • ROOM ${data['room']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            trailing: const Icon(Icons.verified, color: Colors.green, size: 16),
+          ),
+          ...sortedTeams.map((t) {
+            var teamData = t.value;
+            List speakers = (teamData['speakers'] as List? ?? []);
+            return ExpansionTile(
+              title: Text("${teamData['rank']}. ${teamData['teamName']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: Text("${teamData['total']} pts"),
+              children: speakers.map((s) => ListTile(
+                dense: true,
+                title: Text(s['name'] ?? "Speaker"),
+                trailing: Text("Score: ${s['score']} | Rank: ${s['rank']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+              )).toList(),
+            );
+          }).toList(),
+        ],
       ),
     );
   }
+}
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.query_stats_rounded, size: 80, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text("No results have been published yet.", 
-            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
-        ],
-      ),
+// --- TEAM RANKINGS TAB ---
+class _TeamRankingsTab extends StatelessWidget {
+  final String tournamentId;
+  final String query;
+  const _TeamRankingsTab({required this.tournamentId, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: FirebaseDatabase.instance.ref().onValue,
+      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        
+        final db = snapshot.data!.snapshot.value as Map?;
+        final teamData = db?['teams']?[tournamentId] as Map?;
+        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+        final String rule = tourneyData?['rule'] ?? "WSDC";
+
+        if (teamData == null) return const Center(child: Text("No teams found."));
+
+        List<TeamStanding> teams = [];
+        teamData.forEach((key, value) {
+          if (value['name'].toString().toLowerCase().contains(query)) {
+            teams.add(TeamStanding(
+              teamName: value['name'] ?? "Team",
+              wins: (value['wins'] ?? 0).toDouble(),
+              totalMarks: (value['totalMarks'] ?? 0).toDouble(),
+            ));
+          }
+        });
+
+        teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: teams.length,
+          itemBuilder: (context, index) => _RankingCard(
+            index: index, 
+            title: teams[index].teamName, 
+            subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
+            trailingValue: teams[index].wins.toStringAsFixed(0), 
+            trailingLabel: rule == "BP" ? "POINTS" : "WINS", 
+            isTeam: true,
+          ),
+        );
+      },
+    );
+  }
+}
+
+// --- SPEAKER RANKINGS TAB ---
+class _SpeakerRankingsTab extends StatelessWidget {
+  final String tournamentId;
+  final String query;
+  const _SpeakerRankingsTab({required this.tournamentId, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: FirebaseDatabase.instance.ref('ballots/$tournamentId').onValue,
+      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for results..."));
+
+        Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+        Map<String, List<_MatchPerformance>> speakerPerformances = {};
+
+        ballots.forEach((mId, bData) {
+          if (bData['results'] != null) {
+            Map res = Map<dynamic, dynamic>.from(bData['results'] as Map);
+            res.forEach((tId, tData) {
+              String teamName = tData['teamName'] ?? "Unknown";
+              List speeches = (tData['speakers'] as List? ?? []); // Sync with BallotScreen key
+              
+              Map<String, List<double>> matchScoresBySpeaker = {};
+              for (var s in speeches) {
+                String name = s['name'] ?? "Unknown";
+                double score = (s['score'] ?? 0).toDouble();
+                if (name != "Unknown" && score > 0) {
+                  matchScoresBySpeaker.putIfAbsent(name, () => []).add(score);
+                }
+              }
+
+              matchScoresBySpeaker.forEach((name, scores) {
+                double effectiveMatchScore = scores.reduce((a, b) => a + b) / scores.length;
+                String key = "$name-$teamName";
+                speakerPerformances.putIfAbsent(key, () => []).add(
+                  _MatchPerformance(name: name, team: teamName, score: effectiveMatchScore)
+                );
+              });
+            });
+          }
+        });
+
+        List<SpeakerStanding> speakers = speakerPerformances.entries.map((e) {
+          return SpeakerStanding(
+            speakerName: e.value.first.name,
+            teamName: e.value.first.team,
+            totalSubstantivePoints: e.value.fold(0.0, (sum, match) => sum + match.score),
+            matchesPlayed: e.value.length,
+          );
+        }).where((s) => s.speakerName.toLowerCase().contains(query)).toList();
+
+        speakers.sort((a, b) => b.averageScore.compareTo(a.averageScore));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: speakers.length,
+          itemBuilder: (context, index) => _RankingCard(
+            index: index, 
+            title: speakers[index].speakerName, 
+            subtitle: speakers[index].teamName,
+            trailingValue: speakers[index].averageScore.toStringAsFixed(2), 
+            trailingLabel: "AVG", 
+            isTeam: false,
+          ),
+        );
+      },
+    );
+  }
+}
+
+// --- REUSABLE RANKING CARD ---
+class _RankingCard extends StatelessWidget {
+  final int index;
+  final String title;
+  final String subtitle;
+  final String trailingValue;
+  final String trailingLabel;
+  final bool isTeam;
+  const _RankingCard({required this.index, required this.title, required this.subtitle, required this.trailingValue, required this.trailingLabel, required this.isTeam});
+
+  @override
+  Widget build(BuildContext context) {
+    bool isTop = index < 3;
+    return Column(
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: isTop ? const Color(0xFF2264D7) : Colors.grey.shade100,
+              child: Text("${index + 1}", style: TextStyle(color: isTop ? Colors.white : Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(trailingValue, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+                Text(trailingLabel, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+              ]),
+            ),
+          ),
+        ),
+        if (isTeam && index == 3) const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0),
+          child: Divider(color: Colors.redAccent, thickness: 1.5, indent: 40, endIndent: 40),
+        ),
+      ],
     );
   }
 }

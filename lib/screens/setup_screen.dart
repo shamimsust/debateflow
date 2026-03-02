@@ -162,7 +162,7 @@ class _SetupScreenState extends State<SetupScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          value: selectedFormat,
+          initialValue: selectedFormat,
           decoration: const InputDecoration(labelText: "Format", border: OutlineInputBorder()),
           items: ['WSDC', 'BP', 'AP'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: (val) => setState(() => selectedFormat = val!),
@@ -187,7 +187,7 @@ class _SetupScreenState extends State<SetupScreen> {
               onChanged: (val) => setState(() => roundPairingRules[roundNum] = val!),
             ),
           ],
-        )).toList(),
+        )),
       ],
     );
   }

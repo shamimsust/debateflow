@@ -1,4 +1,5 @@
 /// debate_validator.dart
+library;
 
 abstract class DebateValidator {
   String? validate(Map<String, List<double>> scores, Map<String, int> ranks, Map<String, dynamic> settings);

@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:debateflow/main.dart';
 
 void main() {
   // We're skipping this test for now because Firebase.initializeApp() 

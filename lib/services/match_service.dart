@@ -9,15 +9,13 @@ class MatchService {
     required String rule,
     List? teams, 
   }) async {
-    // 1. Fetch Tournament Settings Safely
+    // 1. Fetch Tournament Settings to see pairing choice
     final tournamentSnap = await _db.child('tournaments/$tournamentId').get();
     if (!tournamentSnap.exists) return;
 
-    // We treat the value as dynamic to avoid the JSArray cast error
     final dynamic tData = tournamentSnap.value;
     String pairingType = "Random";
 
-    // Access nested fields safely without casting to Map
     try {
       if (tData != null && tData['settings'] != null) {
         var pRules = tData['settings']['pairingRules'];
@@ -37,7 +35,6 @@ class MatchService {
       final teamsSnap = await _db.child('teams/$tournamentId').get();
       if (!teamsSnap.exists) return;
       
-      // 🛠️ THE REAL FIX: Use .children. It works for both Lists and Maps.
       for (var child in teamsSnap.children) {
         final dynamic t = child.value;
         if (t != null) {
@@ -49,31 +46,31 @@ class MatchService {
           });
         }
       }
+    }
 
-      // Sort logic
-      if (pairingType == "Power Paired") {
-        teamList.sort((a, b) {
-          if (b['wins'] != a['wins']) return (b['wins']).compareTo(a['wins']);
-          return (b['totalMarks']).compareTo(a['totalMarks']);
-        });
-      } else {
-        teamList.shuffle();
-      }
+    // ✅ FIXED: Sort/Shuffle moved HERE so it applies to passed-in team lists too!
+    if (pairingType == "Power Paired") {
+      teamList.sort((a, b) {
+        // First sort by Wins (descending)
+        if (b['wins'] != a['wins']) return (b['wins']).compareTo(a['wins']);
+        // Then sort by Total Marks/Points (descending)
+        return (b['totalMarks']).compareTo(a['totalMarks']);
+      });
+    } else {
+      teamList.shuffle();
     }
 
     if (teamList.isEmpty) return;
 
-    // 3. Clear existing matches
+    // 3. Clear existing matches for this round
     await _db.child('matches/$tournamentId/round_$roundNumber').remove();
 
-    // 4. Fetch Logistics safely using .children
+    // 4. Fetch Logistics (Judges & Rooms)
     final judgesSnap = await _db.child('adjudicators/$tournamentId').get();
     List<Map<String, dynamic>> availableJudges = [];
     for (var child in judgesSnap.children) {
       final dynamic j = child.value;
-      if (j != null) {
-        availableJudges.add({'id': child.key, 'name': j['name'] ?? "TBD"});
-      }
+      if (j != null) availableJudges.add({'id': child.key, 'name': j['name'] ?? "TBD"});
     }
     availableJudges.shuffle();
 
@@ -81,9 +78,7 @@ class MatchService {
     List<String> availableRooms = [];
     for (var child in roomsSnap.children) {
       final dynamic r = child.value;
-      if (r != null && r['name'] != null) {
-        availableRooms.add(r['name'].toString());
-      }
+      if (r != null && r['name'] != null) availableRooms.add(r['name'].toString());
     }
 
     int teamsPerMatch = (rule == "BP") ? 4 : 2;
@@ -127,7 +122,7 @@ class MatchService {
 
         await matchRef.push().set(matchData);
       } else {
-        // Create BYEs for remainders
+        // Create BYEs for remainders (1-3 teams in BP, 1 team in WSDC)
         for (int k = i; k < teamList.length; k++) {
           await _createBye(tournamentId, teamList[k], roundNumber, rule);
         }
@@ -138,7 +133,7 @@ class MatchService {
   Future<void> _createBye(String tId, dynamic team, int round, String rule) async {
     final byeRef = _db.child('matches/$tId/round_$round').push();
     double points = (rule == "BP") ? 3.0 : 1.0; 
-    double marks = (rule == "BP") ? 0.0 : 210.0;
+    double marks = (rule == "BP") ? 0.0 : 210.0; // Standard WSDC average for BYE
 
     await byeRef.set({
       'sideA': team['name'],
@@ -150,16 +145,12 @@ class MatchService {
       'is_bye': true,
     });
 
-    // 🛠️ TRANSACTION FIX: Use dynamic to avoid Map cast error during update
     final teamRef = _db.child('teams/$tId/${team['id']}');
     await teamRef.runTransaction((Object? teamData) {
       if (teamData == null) return Transaction.abort();
-      
-      // Convert to Map ONLY after we know it's safe
       Map<String, dynamic> updated = Map<String, dynamic>.from(teamData as Map);
       updated['wins'] = (updated['wins'] ?? 0).toDouble() + points;
       updated['totalMarks'] = (updated['totalMarks'] ?? 0).toDouble() + marks;
-      
       return Transaction.success(updated);
     });
   }

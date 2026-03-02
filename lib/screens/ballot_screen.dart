@@ -1,30 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../services/debate_validator.dart';
+import '../services/debate_validator.dart'; // ✅ Uses your abstract/factory service
 
 class BallotScreen extends StatefulWidget {
   final String tournamentId;
   final String matchId;
   final Map matchData;
 
-  const BallotScreen({super.key, required this.tournamentId, required this.matchId, required this.matchData});
+  const BallotScreen({
+    super.key, 
+    required this.tournamentId, 
+    required this.matchId, 
+    required this.matchData
+  });
 
   @override
   State<BallotScreen> createState() => _BallotScreenState();
 }
 
 class _BallotScreenState extends State<BallotScreen> {
+  // Data Maps
   final Map<String, List<TextEditingController>> _scoreMap = {};
-  final Map<String, bool> _teamIronmanStatus = {}; 
   final Map<String, int> _ranks = {}; 
   final Map<String, String> _teamIdMap = {}; 
   final Map<String, List<String>> _speakerNames = {};
   final Map<String, List<String?>> _selectedSpeakers = {};
+  final Map<String, bool> _isIronmanMap = {}; 
   
   String debateRule = "WSDC";
   bool _isSubmitting = false;
-  double minSub = 60, maxSub = 80, minReply = 30, maxReply = 40;
+  bool _hasTies = false; 
+  bool _isLoading = true; 
+
+  // Validation settings for the Service
+  Map<String, dynamic> validatorSettings = {
+    'minSub': 60.0, 'maxSub': 80.0, 'minReply': 30.0, 'maxReply': 40.0
+  };
 
   @override
   void initState() {
@@ -32,137 +44,171 @@ class _BallotScreenState extends State<BallotScreen> {
     _initBallot();
   }
 
-  void _initBallot() async {
-    debateRule = widget.matchData['rule'] ?? "WSDC";
-    final settingsSnap = await FirebaseDatabase.instance.ref('tournaments/${widget.tournamentId}/settings').get();
-    if (settingsSnap.exists) {
-      final s = Map<dynamic, dynamic>.from(settingsSnap.value as Map);
-      setState(() {
-        minSub = (s['minSubstantive'] ?? 60).toDouble();
-        maxSub = (s['maxSubstantive'] ?? 80).toDouble();
-        minReply = (s['minReply'] ?? 30).toDouble();
-        maxReply = (s['maxReply'] ?? 40).toDouble();
-      });
+  @override
+  void dispose() {
+    for (var controllers in _scoreMap.values) {
+      for (var ctrl in controllers) ctrl.dispose();
     }
+    super.dispose();
+  }
 
-    List<String> sideKeys = (debateRule == "BP") ? ["sideOG", "sideOO", "sideCG", "sideCO"] : ["sideA", "sideB"];
+  Future<void> _initBallot() async {
+    debateRule = widget.matchData['rule'] ?? "WSDC";
 
-    for (var key in sideKeys) {
-      String? teamName = widget.matchData[key];
-      String? teamId = widget.matchData['${key}Id'];
-      if (teamName != null && teamId != null) {
-        _teamIdMap[teamName] = teamId;
-        _ranks[teamName] = 1;
-        _teamIronmanStatus[teamName] = false; 
-        int speechCount = (debateRule == "BP") ? 2 : 4;
-        _scoreMap[teamName] = List.generate(speechCount, (_) => TextEditingController());
-        _selectedSpeakers[teamName] = List.generate(speechCount, (_) => null);
+    try {
+      // 1. Fetch Tournament Settings
+      final settingsSnap = await FirebaseDatabase.instance
+          .ref('tournaments/${widget.tournamentId}/settings').get();
+      
+      if (settingsSnap.exists) {
+        final s = Map<dynamic, dynamic>.from(settingsSnap.value as Map);
+        validatorSettings['minSub'] = (s['minSubstantive'] ?? 60.0).toDouble();
+        validatorSettings['maxSub'] = (s['maxSubstantive'] ?? 80.0).toDouble();
+        validatorSettings['minReply'] = (s['minReply'] ?? 30.0).toDouble();
+        validatorSettings['maxReply'] = (s['maxReply'] ?? 40.0).toDouble();
+      }
+
+      // 2. Identify Sides
+      List<String> sideKeys = (debateRule == "BP") 
+          ? ["sideOG", "sideOO", "sideCG", "sideCO"] 
+          : ["sideA", "sideB"];
+
+      // 3. Setup Controllers & Fetch Speakers
+      for (var key in sideKeys) {
+        String? teamName = widget.matchData[key];
+        String? teamId = widget.matchData['${key}Id'];
         
-        final teamSnap = await FirebaseDatabase.instance.ref('teams/${widget.tournamentId}/$teamId').get();
-        if (teamSnap.exists) {
-          Map data = teamSnap.value as Map;
-          setState(() => _speakerNames[teamName] = [data['speaker1'], data['speaker2'], data['speaker3']].whereType<String>().toList());
+        if (teamName != null && teamId != null) {
+          _teamIdMap[teamName] = teamId;
+          _ranks[teamName] = 0;
+          _isIronmanMap[teamName] = false;
+          
+          int speechCount = (debateRule == "BP") ? 2 : 4;
+          _scoreMap[teamName] = List.generate(speechCount, (_) => TextEditingController());
+          _selectedSpeakers[teamName] = List.generate(speechCount, (_) => null);
+
+          final teamSnap = await FirebaseDatabase.instance
+              .ref('teams/${widget.tournamentId}/$teamId').get();
+          
+          if (teamSnap.exists) {
+            Map data = teamSnap.value as Map;
+            _speakerNames[teamName] = [data['speaker1'], data['speaker2'], data['speaker3']]
+                .whereType<String>().toList();
+          }
         }
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  double _getTeamTotal(String teamName) => _scoreMap[teamName]!.fold(0.0, (sum, ctrl) => sum + (double.tryParse(ctrl.text) ?? 0.0));
+  // --- BUSINESS LOGIC ---
+
+  void _detectIronman(String teamName) {
+    if (debateRule == "BP") return;
+    List<String?> selected = _selectedSpeakers[teamName]!;
+    List<String?> substantives = selected.take(3).where((s) => s != null).toList();
+    bool duplicate = substantives.length != substantives.toSet().length;
+    if (duplicate != _isIronmanMap[teamName]) setState(() => _isIronmanMap[teamName] = duplicate);
+  }
+
+  void _calculateAutoRanks() {
+    List<MapEntry<String, double>> teamTotals = _scoreMap.keys.map((name) {
+      return MapEntry(name, _getTeamTotal(name));
+    }).toList();
+
+    // Sort Descending (Highest score = Rank 1)
+    teamTotals.sort((a, b) => b.value.compareTo(a.value));
+
+    bool tieFound = false;
+    Map<String, int> newRanks = {};
+
+    for (int i = 0; i < teamTotals.length; i++) {
+      double score = teamTotals[i].value;
+      // Mark as 0 if points equal another team (invalid state)
+      bool tied = (score > 0) && (
+        (i > 0 && score == teamTotals[i-1].value) || 
+        (i < teamTotals.length - 1 && score == teamTotals[i+1].value)
+      );
+      
+      if (tied) tieFound = true;
+      newRanks[teamTotals[i].key] = tied ? 0 : i + 1;
+    }
+
+    setState(() {
+      _ranks.addAll(newRanks);
+      _hasTies = tieFound;
+    });
+  }
+
+  double _getTeamTotal(String teamName) => _scoreMap[teamName]!
+      .fold(0.0, (sum, ctrl) => sum + (double.tryParse(ctrl.text) ?? 0.0));
+
+  // --- UI BUILDING ---
 
   @override
   Widget build(BuildContext context) {
-    String winner = "";
-    double margin = 0;
-    if (debateRule == "WSDC" && _scoreMap.length == 2) {
-      var keys = _scoreMap.keys.toList();
-      double t1 = _getTeamTotal(keys[0]);
-      double t2 = _getTeamTotal(keys[1]);
-      if (t1 != t2) {
-        winner = t1 > t2 ? keys[0] : keys[1];
-        margin = (t1 - t2).abs();
-      }
-    }
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
-      appBar: AppBar(title: Text("$debateRule Ballot"), backgroundColor: const Color(0xFF2264D7), foregroundColor: Colors.white),
-      body: _isSubmitting ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            if (debateRule == "WSDC" && winner.isNotEmpty) _buildWinnerBanner(winner, margin),
-            ..._scoreMap.keys.map((teamName) => _buildTeamCard(teamName)).toList(),
-            const SizedBox(height: 20),
-            _buildSubmitButton(),
-          ],
-        ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: Text("$debateRule Official Ballot"), 
+        backgroundColor: const Color(0xFF2264D7), 
+        foregroundColor: Colors.white,
       ),
+      body: _isSubmitting 
+        ? const Center(child: CircularProgressIndicator()) 
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                if (_hasTies) _buildWarning("TIES DETECTED: Scores must result in distinct ranks."),
+                ..._scoreMap.keys.map((teamName) => _buildTeamCard(teamName)),
+                const SizedBox(height: 24),
+                _buildSubmitButton(),
+              ],
+            ),
+          ),
     );
   }
 
-  Widget _buildWinnerBanner(String winner, double margin) {
-    return Container(
-      width: double.infinity, margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.green.shade600, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        children: [
-          const Text("CURRENT WINNER", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
-          Text(winner, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          Text("Margin: ${margin.toStringAsFixed(1)} pts", style: const TextStyle(color: Colors.white, fontSize: 12)),
-        ],
-      ),
-    );
-  }
+  Widget _buildWarning(String msg) => Container(
+    width: double.infinity, padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)),
+    child: Text(msg, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+  );
 
   Widget _buildTeamCard(String teamName) {
-    String sideLabel = "";
-    if (debateRule == "BP") {
-      if (widget.matchData['sideOG'] == teamName) sideLabel = "Opening Government";
-      if (widget.matchData['sideOO'] == teamName) sideLabel = "Opening Opposition";
-      if (widget.matchData['sideCG'] == teamName) sideLabel = "Closing Government";
-      if (widget.matchData['sideCO'] == teamName) sideLabel = "Closing Opposition";
-    }
-
+    bool isTied = _ranks[teamName] == 0;
     return Card(
-      elevation: 0, 
-      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0, margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15), 
-        side: BorderSide(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: isTied ? Colors.red : Colors.grey.shade200, width: isTied ? 2 : 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (sideLabel.isNotEmpty) 
-                      Text(sideLabel.toUpperCase(), 
-                        style: const TextStyle(color: Color(0xFF2264D7), fontWeight: FontWeight.bold, fontSize: 10)),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(teamName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
+                    if (_isIronmanMap[teamName] ?? false) 
+                      const Text("IRONMAN ACTIVE", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w900, fontSize: 10)),
+                  ]),
                 ),
-                if (debateRule == "WSDC") Row(
-                  children: [
-                    const Text("Ironman", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    Checkbox(
-                      value: _teamIronmanStatus[teamName], 
-                      activeColor: const Color(0xFF2264D7),
-                      onChanged: (val) => setState(() => _teamIronmanStatus[teamName] = val!),
-                    )
-                  ],
-                ),
-                if (debateRule == "BP") _buildRankPicker(teamName) 
-                else Text("${_getTeamTotal(teamName).toStringAsFixed(1)} pts", 
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+                // BP shows Rank Tag, WSDC shows Total Points
+                if (debateRule == "BP")
+                  _buildRankBadge(isTied, _ranks[teamName] ?? 0)
+                else
+                  Text("${_getTeamTotal(teamName).toStringAsFixed(1)} PTS", style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF2264D7), fontSize: 16)),
               ],
             ),
-            const Divider(height: 24),
+            const Divider(height: 30),
             ..._scoreMap[teamName]!.asMap().entries.map((e) => _buildSpeechRow(teamName, e.key)),
           ],
         ),
@@ -170,132 +216,147 @@ class _BallotScreenState extends State<BallotScreen> {
     );
   }
 
+  Widget _buildRankBadge(bool isTied, int rank) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    decoration: BoxDecoration(
+      color: isTied ? Colors.red : const Color(0xFF2264D7),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      isTied ? "TIE" : "RANK $rank",
+      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    ),
+  );
+
   Widget _buildSpeechRow(String teamName, int idx) {
-    String posLabel = "Speaker ${idx + 1}";
-    if (debateRule == "BP") {
-       posLabel = (idx == 0) ? "Member" : "Whip";
-    } else if (idx == 3) {
-      posLabel = "Reply";
-    }
+    String label = (debateRule == "BP") ? (idx == 0 ? "Member" : "Whip") : (idx == 3 ? "Reply" : "Speaker ${idx + 1}");
+    List<String> items = _speakerNames[teamName] ?? [];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
           Expanded(flex: 3, child: DropdownButtonFormField<String>(
-            initialValue: _selectedSpeakers[teamName]![idx], // ✅ Fixed: changed 'value' to 'initialValue'
-            hint: Text(posLabel, style: const TextStyle(fontSize: 12)),
-            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-            items: _speakerNames[teamName]!.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12)))).toList(),
-            onChanged: (v) => setState(() => _selectedSpeakers[teamName]![idx] = v),
+            value: (items.contains(_selectedSpeakers[teamName]![idx])) ? _selectedSpeakers[teamName]![idx] : null, 
+            hint: Text(label, style: const TextStyle(fontSize: 13)),
+            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+            items: items.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13)))).toList(),
+            onChanged: (v) {
+              setState(() {
+                _selectedSpeakers[teamName]![idx] = v;
+                _detectIronman(teamName);
+              });
+            },
           )),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(flex: 1, child: TextField(
             controller: _scoreMap[teamName]![idx],
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
             textAlign: TextAlign.center,
-            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-            onChanged: (v) => setState(() {}),
+            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(vertical: 14), hintText: "0"),
+            onChanged: (v) => _calculateAutoRanks(), // ✅ BP Ranks update instantly on number change
           )),
         ],
       ),
     );
   }
 
-  Widget _buildRankPicker(String teamName) {
-    return DropdownButton<int>(
-      value: _ranks[teamName],
-      onChanged: (v) => setState(() => _ranks[teamName] = v!),
-      items: [1,2,3,4].map((i) => DropdownMenuItem(value: i, child: Text("Rank $i"))).toList(),
-    );
-  }
+  Widget _buildSubmitButton() => ElevatedButton(
+    onPressed: (_hasTies || _isSubmitting) ? null : _submit,
+    style: ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF2264D7), foregroundColor: Colors.white, 
+      minimumSize: const Size(double.infinity, 56), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    child: Text(_hasTies ? "RESOLVE TIES TO SUBMIT" : "SUBMIT BALLOT", style: const TextStyle(fontWeight: FontWeight.bold)),
+  );
 
-  Widget _buildSubmitButton() {
-    return ElevatedButton(
-      onPressed: _submit,
-      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
-      child: const Text("SUBMIT FINAL BALLOT"),
-    );
-  }
+  // --- VALIDATION & SUBMISSION ---
 
   Future<void> _submit() async {
-    Map<String, List<double>> currentScores = _scoreMap.map((key, value) => MapEntry(key, value.map((c) => double.tryParse(c.text) ?? 0.0).toList()));
-    Map<String, dynamic> settings = {'minSub': minSub, 'maxSub': maxSub, 'minReply': minReply, 'maxReply': maxReply};
-    
-    final validator = (debateRule == "WSDC") ? WSDCValidator() : BPValidator();
-    String? error = validator.validate(currentScores, _ranks, settings);
-    
+    // 1. Speaker Selection Validation
+    for (var team in _selectedSpeakers.keys) {
+      if (_selectedSpeakers[team]!.any((s) => s == null)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All speaker slots must be assigned!")));
+        return;
+      }
+    }
+
+    // 2. Map data for Validator
+    Map<String, List<double>> rawScores = {};
+    _scoreMap.forEach((team, controllers) {
+      rawScores[team] = controllers.map((c) => double.tryParse(c.text) ?? 0.0).toList();
+    });
+
+    // 3. Call Service Validator (WSDC vs BP)
+    DebateValidator validator = (debateRule == "BP") ? BPValidator() : WSDCValidator();
+    String? error = validator.validate(rawScores, _ranks, validatorSettings);
+
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error), backgroundColor: Colors.red));
       return;
     }
 
-    for (var team in _selectedSpeakers.keys) {
-      if (_selectedSpeakers[team]!.any((s) => s == null)) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Assign all speakers first!")));
-        return;
-      }
-    }
+    _showConfirmationDialog();
+  }
 
+  void _showConfirmationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Results"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: _ranks.entries.map((e) => ListTile(
+            title: Text(e.key),
+            trailing: Text("Rank ${e.value}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+          )).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("BACK")),
+          ElevatedButton(onPressed: () { Navigator.pop(context); _processSubmission(); }, child: const Text("SUBMIT")),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _processSubmission() async {
     setState(() => _isSubmitting = true);
-    
     try {
       final db = FirebaseDatabase.instance.ref();
-      Map<String, dynamic> results = {};
+      Map<String, dynamic> ballotResults = {};
+      int round = int.tryParse(widget.matchData['round']?.toString() ?? "1") ?? 1;
 
       for (var teamName in _scoreMap.keys) {
         String tId = _teamIdMap[teamName]!;
-        double total = _getTeamTotal(teamName);
-        
-        if (debateRule == "WSDC") {
-          double otherTotal = _getTeamTotal(_scoreMap.keys.firstWhere((k) => k != teamName));
-          _ranks[teamName] = (total > otherTotal) ? 1 : 2;
-        }
-
-        results[tId] = {
+        ballotResults[tId] = {
           'teamName': teamName,
-          'total': total,
+          'total': _getTeamTotal(teamName),
           'rank': _ranks[teamName],
-          'isIronman': _teamIronmanStatus[teamName] ?? false,
+          'isIronman': _isIronmanMap[teamName] ?? false,
           'speeches': _scoreMap[teamName]!.asMap().entries.map((e) => {
             'speakerName': _selectedSpeakers[teamName]![e.key],
             'score': double.tryParse(e.value.text) ?? 0.0,
+            'isSubstantive': (debateRule == "BP" || e.key < 3),
           }).toList(),
         };
       }
 
+      // Save Ballot
       await db.child('ballots/${widget.tournamentId}/${widget.matchId}').set({
-        'results': results,
-        'round': widget.matchData['round'],
-        'timestamp': ServerValue.timestamp,
+        'results': ballotResults, 'round': round, 'timestamp': ServerValue.timestamp,
       });
 
-      String winnerName = _ranks.entries.firstWhere((e) => e.value == 1).key;
-      await db.child('matches/${widget.tournamentId}/round_${widget.matchData['round']}/${widget.matchId}').update({
+      // Update Match Status
+      await db.child('matches/${widget.tournamentId}/round_$round/${widget.matchId}').update({
         'status': 'Completed',
-        'winner': winnerName,
+        'winner': _ranks.entries.firstWhere((e) => e.value == 1).key,
       });
 
-      for (var entry in results.entries) {
-        double pts = (debateRule == "WSDC") 
-          ? (entry.value['rank'] == 1 ? 1.0 : 0.0) 
-          : (3.0 - (entry.value['rank'] - 1));
-
-        await db.child('teams/${widget.tournamentId}/${entry.key}').runTransaction((Object? data) {
-          if (data == null) return Transaction.abort();
-          Map t = Map<String, dynamic>.from(data as Map);
-          t['wins'] = (t['wins'] ?? 0).toDouble() + pts;
-          t['totalMarks'] = (t['totalMarks'] ?? 0).toDouble() + entry.value['total'];
-          return Transaction.success(t);
-        });
-      }
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ballot Submitted!")));
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission failed: $e"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission Error: $e")));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

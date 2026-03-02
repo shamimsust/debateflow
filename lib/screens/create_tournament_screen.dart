@@ -204,7 +204,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
       ),
       child: DropdownButtonFormField<String>(
-        value: _selectedFormat,
+        initialValue: _selectedFormat,
         items: _formats.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontWeight: FontWeight.w500)))).toList(),
         onChanged: (val) => setState(() => _selectedFormat = val!),
         decoration: const InputDecoration(
@@ -231,7 +231,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
           hintText: "Select Date",
           prefixIcon: Icon(Icons.calendar_today_outlined, color: Color(0xFF2264D7)),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+          contentPadding: EdgeInsets.symmetric(vertical: 18),
         ),
       ),
     );

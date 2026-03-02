@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../services/match_service.dart';
+import '../services/round_service.dart'; // ✅ Imported your new service
 import 'ballot_screen.dart';
 
 class PairingScreen extends StatefulWidget {
@@ -13,6 +14,7 @@ class PairingScreen extends StatefulWidget {
 
 class _PairingScreenState extends State<PairingScreen> {
   final MatchService _matchService = MatchService();
+  final RoundService _roundService = RoundService();
   int totalRounds = 1;
 
   @override
@@ -21,17 +23,15 @@ class _PairingScreenState extends State<PairingScreen> {
     _loadSettings();
   }
 
-  // 🛠️ DEBUG FIX 1: Safely load settings without 'as Map'
   void _loadSettings() {
     FirebaseDatabase.instance.ref('tournaments/${widget.tournamentId}').onValue.listen((event) {
       if (event.snapshot.exists) {
         final dynamic rawValue = event.snapshot.value;
         if (rawValue != null) {
-          // Use dynamic access to avoid cast errors if settings is a JSArray
           final String prelimsStr = rawValue['prelims']?.toString() ?? '1';
           if (mounted) {
             setState(() {
-              totalRounds = int.tryParse(prelimsStr) ?? 1;
+              totalRounds = double.tryParse(prelimsStr)?.toInt() ?? 1; 
             });
           }
         }
@@ -50,28 +50,22 @@ class _PairingScreenState extends State<PairingScreen> {
           title: const Text("Tournament Pairings", style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: const Color(0xFF2264D7),
           foregroundColor: Colors.white,
-          elevation: 2,
           bottom: TabBar(
             isScrollable: totalRounds > 4,
             indicatorColor: Colors.white,
-            indicatorWeight: 4,
-            labelColor: Colors.white,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            unselectedLabelColor: Colors.white.withAlpha(150),
             tabs: List.generate(totalRounds, (i) => Tab(text: "Round ${i + 1}")),
           ),
         ),
         body: TabBarView(
-          children: totalRounds == 0 
-            ? [const Center(child: Text("No rounds configured"))]
-            : List.generate(totalRounds, (i) {
-                return RoundView(
-                  tournamentId: widget.tournamentId,
-                  roundNumber: i + 1,
-                  isLastRound: (i + 1) == totalRounds,
-                  matchService: _matchService,
-                );
-              }),
+          children: List.generate(totalRounds, (i) {
+            return RoundView(
+              tournamentId: widget.tournamentId,
+              roundNumber: i + 1,
+              isLastRound: (i + 1) == totalRounds,
+              matchService: _matchService,
+              roundService: _roundService, // ✅ Pass service down
+            );
+          }),
         ),
       ),
     );
@@ -83,6 +77,7 @@ class RoundView extends StatefulWidget {
   final int roundNumber;
   final bool isLastRound;
   final MatchService matchService;
+  final RoundService roundService;
 
   const RoundView({
     super.key,
@@ -90,6 +85,7 @@ class RoundView extends StatefulWidget {
     required this.roundNumber,
     required this.isLastRound,
     required this.matchService,
+    required this.roundService,
   });
 
   @override
@@ -97,173 +93,145 @@ class RoundView extends StatefulWidget {
 }
 
 class _RoundViewState extends State<RoundView> with AutomaticKeepAliveClientMixin {
-  bool _isGenerating = false;
+  bool _isProcessing = false;
 
   @override
   bool get wantKeepAlive => true;
 
-  // 🛠️ DEBUG FIX 2: Refined handleGenerate to remove all 'as Map'
+  // ✅ Step 1: Generate Matches + Set Round Status to 'Draft'
   Future<void> _handleGenerate() async {
-    setState(() => _isGenerating = true);
-    final db = FirebaseDatabase.instance.ref();
-    
+    setState(() => _isProcessing = true);
     try {
-      final tourneySnap = await db.child('tournaments/${widget.tournamentId}').get();
-      if (!tourneySnap.exists) return;
-
+      final tourneySnap = await FirebaseDatabase.instance.ref('tournaments/${widget.tournamentId}').get();
       final dynamic tourneyData = tourneySnap.value;
-      String tournamentRule = tourneyData['rule'] ?? "WSDC";
-      String pairingType = "Random"; 
-      
-      try {
-        if (tourneyData['settings'] != null && tourneyData['settings']['pairingRules'] != null) {
-          pairingType = tourneyData['settings']['pairingRules'][widget.roundNumber.toString()]?.toString() ?? "Random";
-        }
-      } catch (_) {}
+      String rule = tourneyData['rule'] ?? "WSDC";
 
-      final teamsSnap = await db.child('teams/${widget.tournamentId}').get();
-      List teams = [];
-      
-      if (teamsSnap.exists) {
-        // USE .children TO AVOID JSArray ERROR COMPLETELY
-        for (var child in teamsSnap.children) {
-          final dynamic t = child.value;
-          if (t != null) {
-            teams.add({
-              "id": child.key,
-              "name": t['name'] ?? "Unknown",
-              "wins": (t['wins'] ?? 0).toDouble(),
-              "totalMarks": (t['totalMarks'] ?? 0.0).toDouble(),
-            });
-          }
-        }
+      await widget.matchService.generateMatches(
+        tournamentId: widget.tournamentId,
+        roundNumber: widget.roundNumber,
+        rule: rule,
+      );
 
-        // Sorting is fine now because 'teams' is a standard Dart List
-        if (pairingType == "Power Paired") {
-          teams.sort((a, b) => b['wins'] != a['wins'] 
-              ? (b['wins']).compareTo(a['wins']) 
-              : (b['totalMarks']).compareTo(a['totalMarks']));
-        } else {
-          teams.shuffle();
-        }
-
-        await widget.matchService.generateMatches(
-          tournamentId: widget.tournamentId,
-          roundNumber: widget.roundNumber,
-          teams: teams,
-          rule: tournamentRule, 
-        );
-      }
-    } catch (e) {
-      debugPrint("PAIRING DEBUG: Error caught: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
-      }
+      // Initialize status in your RoundService
+      await widget.roundService.updateRoundStatus(widget.tournamentId, widget.roundNumber.toString(), "Draft");
     } finally {
-      if (mounted) setState(() => _isGenerating = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final matchRef = FirebaseDatabase.instance.ref('matches/${widget.tournamentId}/round_${widget.roundNumber}');
-
+    final String roundKey = "round_${widget.roundNumber}";
+    
     return StreamBuilder(
-      stream: matchRef.onValue,
-      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+      // Listen to Round Status and Matches simultaneously
+      stream: FirebaseDatabase.instance.ref().onValue, 
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         
-        // 🛠️ DEBUG FIX 3: Robust Check for Empty matches
-        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-          return _buildEmptyState();
-        }
+        final dbData = snapshot.data!.snapshot.value as Map?;
+        final roundSettings = dbData?['tournaments']?[widget.tournamentId]?['rounds']?[roundKey];
+        final String status = roundSettings?['status'] ?? "Not Generated";
+        
+        final matchData = dbData?['matches']?[widget.tournamentId]?[roundKey] as Map?;
+        if (matchData == null) return _buildEmptyState();
 
         List matches = [];
-        // USE .children TO PREVENT THE JSArray CRASH ON UI RENDER
-        for (var child in snapshot.data!.snapshot.children) {
-          final dynamic val = child.value;
-          if (val != null) {
-            matches.add({"id": child.key, ...Map<String, dynamic>.from(val as Map)});
-          }
-        }
+        matchData.forEach((key, val) => matches.add({"id": key, ...Map<String, dynamic>.from(val)}));
+
+        bool allFinished = matches.every((m) => m['status'] == 'Completed');
 
         return Column(
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              color: Colors.blue.shade50,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("Round ${widget.roundNumber}: ${matches.length} Matches", 
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7), fontSize: 12)),
-                  TextButton.icon(
-                    onPressed: _isGenerating ? null : _handleReset,
-                    icon: const Icon(Icons.refresh, size: 16, color: Colors.redAccent),
-                    label: const Text("CLEAR ROUND", style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
+            _buildRoundHeader(status, matches.length, allFinished),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 itemCount: matches.length,
                 itemBuilder: (context, index) => _buildMatchCard(matches[index]),
               ),
             ),
+            if (widget.isLastRound && allFinished) _buildAdvanceButton(),
           ],
         );
-      },
+      }
     );
   }
 
-  // Helper to safely handle resets
-  Future<void> _handleReset() async {
-    setState(() => _isGenerating = true);
-    await FirebaseDatabase.instance.ref('matches/${widget.tournamentId}/round_${widget.roundNumber}').remove();
-    if (mounted) setState(() => _isGenerating = false);
+  Widget _buildRoundHeader(String status, int matchCount, bool allFinished) {
+    bool isReleased = status == "Released";
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: isReleased ? Colors.green.shade50 : Colors.blue.shade50,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Status: ${status.toUpperCase()}", style: TextStyle(fontWeight: FontWeight.bold, color: isReleased ? Colors.green.shade700 : Colors.blue.shade700)),
+              Text("$matchCount Matches Paired", style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: isReleased ? Colors.orange : Colors.green),
+            onPressed: () => widget.roundService.updateRoundStatus(widget.tournamentId, widget.roundNumber.toString(), isReleased ? "Draft" : "Released"),
+            icon: Icon(isReleased ? Icons.lock : Icons.send, size: 16),
+            label: Text(isReleased ? "UNRELEASE" : "RELEASE"),
+          )
+        ],
+      ),
+    );
   }
 
   Widget _buildMatchCard(Map m) {
+    bool isBP = m['rule'] == "BP";
     bool isCompleted = m['status'] == 'Completed';
-    bool isBye = m['is_bye'] ?? false;
 
     return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: Colors.grey.shade200)),
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isCompleted ? Colors.green.shade200 : Colors.grey.shade300)),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        title: Text(isBye ? "${m['sideA']} (BYE)" : "${m['sideA'] ?? 'TBD'} vs ${m['sideB'] ?? 'TBD'}", style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(isBye ? "Automatic Win" : "${m['room'] ?? 'TBD'} • ${m['judge'] ?? 'TBD'}"),
-        trailing: Icon(isCompleted ? Icons.check_circle : Icons.pending_actions, color: isCompleted ? Colors.green : Colors.orange),
-        onTap: isBye ? null : () {
-          Navigator.push(context, MaterialPageRoute(builder: (c) => BallotScreen(
-            tournamentId: widget.tournamentId,
-            matchId: m['id'],
-            matchData: Map<String, dynamic>.from(m),
-          )));
-        },
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => BallotScreen(tournamentId: widget.tournamentId, matchId: m['id'], matchData: Map<String, dynamic>.from(m)))),
+        title: isBP 
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sideText("OG", m['sideOG']), _sideText("OO", m['sideOO']),
+              _sideText("CG", m['sideCG']), _sideText("CO", m['sideCO']),
+            ])
+          : Text("${m['sideA']} vs ${m['sideB']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("${m['room']} | ${m['judge']}"),
+        trailing: Icon(isCompleted ? Icons.check_circle : Icons.pending, color: isCompleted ? Colors.green : Colors.orange),
+      ),
+    );
+  }
+
+  Widget _sideText(String side, String? name) => Text("$side: ${name ?? 'TBD'}", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500));
+
+  Widget _buildAdvanceButton() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, padding: const EdgeInsets.all(16)),
+        onPressed: () => widget.roundService.advanceToNextRound(widget.tournamentId),
+        child: const Text("ADVANCE TO NEXT ROUND", style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.grid_view_rounded, size: 60, color: Colors.black12),
-          const SizedBox(height: 16),
-          Text("Round ${widget.roundNumber} is ready to pair."),
-          const SizedBox(height: 20),
-          _isGenerating ? const CircularProgressIndicator() : ElevatedButton(onPressed: _handleGenerate, child: const Text("GENERATE MATCHES")),
-        ],
-      ),
+      child: _isProcessing 
+        ? const CircularProgressIndicator() 
+        : Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.analytics_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _handleGenerate, child: const Text("GENERATE PAIRINGS")),
+            ],
+          ),
     );
   }
 }
