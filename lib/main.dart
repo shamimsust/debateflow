@@ -82,7 +82,7 @@ class _DebateFlowAppState extends State<DebateFlowApp> {
         StreamProvider<AppUser?>(
           create: (_) => AuthService().user,
           initialData: null,
-          catchError: (_, __) => null,
+          catchError: (_, _) => null,
         ),
         Provider<MotionService>(create: (_) => MotionService()),
         Provider<MatchService>(create: (_) => MatchService()),
@@ -116,7 +116,7 @@ class _DebateFlowAppState extends State<DebateFlowApp> {
 
 // --- BEAUTIFUL SPLASH UI ---
 class _SplashScreen extends StatelessWidget {
-  const _SplashScreen({super.key}); // Added key for best practice
+  const _SplashScreen(); // Added key for best practice
 
   @override
   Widget build(BuildContext context) {

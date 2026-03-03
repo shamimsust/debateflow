@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class MotionRevealScreen extends StatelessWidget {
@@ -73,7 +74,7 @@ class MotionRevealScreen extends StatelessWidget {
           const SizedBox(height: 30),
           Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 8, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
-          Text(sub, style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10, letterSpacing: 2)),
+          Text(sub, style: TextStyle(color: Colors.white.withOpacityValue(0.4), fontSize: 10, letterSpacing: 2)),
         ],
       ),
     );
@@ -194,7 +195,7 @@ class _MotionContentState extends State<_MotionContent> {
       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(50), 
-        border: Border.all(color: const Color(0xFF46C3D7).withOpacity(0.5))
+        border: Border.all(color: const Color(0xFF46C3D7).withOpacityValue(0.5))
       ),
       child: Text(
         time, 

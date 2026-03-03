@@ -47,7 +47,9 @@ class _BallotScreenState extends State<BallotScreen> {
   @override
   void dispose() {
     for (var controllers in _scoreMap.values) {
-      for (var ctrl in controllers) ctrl.dispose();
+      for (var ctrl in controllers) {
+        ctrl.dispose();
+      }
     }
     super.dispose();
   }
@@ -237,7 +239,7 @@ class _BallotScreenState extends State<BallotScreen> {
       child: Row(
         children: [
           Expanded(flex: 3, child: DropdownButtonFormField<String>(
-            value: (items.contains(_selectedSpeakers[teamName]![idx])) ? _selectedSpeakers[teamName]![idx] : null, 
+            initialValue: (items.contains(_selectedSpeakers[teamName]![idx])) ? _selectedSpeakers[teamName]![idx] : null, 
             hint: Text(label, style: const TextStyle(fontSize: 13)),
             decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
             items: items.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13)))).toList(),
@@ -323,6 +325,7 @@ class _BallotScreenState extends State<BallotScreen> {
 
   Future<void> _processSubmission() async {
     setState(() => _isSubmitting = true);
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final db = FirebaseDatabase.instance.ref();
       Map<String, dynamic> ballotResults = {};
@@ -356,7 +359,7 @@ class _BallotScreenState extends State<BallotScreen> {
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission Error: $e")));
+      messenger.showSnackBar(SnackBar(content: Text("Submission Error: $e")));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class CreateTournamentScreen extends StatefulWidget {
@@ -180,7 +181,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)],
       ),
       child: TextField(
         controller: controller,
@@ -201,7 +202,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       decoration: BoxDecoration(
         color: Colors.white, 
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)],
       ),
       child: DropdownButtonFormField<String>(
         initialValue: _selectedFormat,
@@ -220,7 +221,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)],
       ),
       child: TextField(
         controller: _dateController,
@@ -258,7 +259,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           elevation: 4,
-          shadowColor: const Color(0xFF2264D7).withOpacity(0.4),
+          shadowColor: const Color(0xFF2264D7).withOpacityValue(0.4),
         ),
         child: _isLoading 
           ? const CircularProgressIndicator(color: Colors.white)

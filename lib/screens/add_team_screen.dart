@@ -164,7 +164,7 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
 
                       return DropdownButtonFormField<String>(
                         key: UniqueKey(), // 🛠️ Fix: Force rebuild to prevent state conflicts
-                        value: safeVal,
+                        initialValue: safeVal,
                         decoration: _inputStyle("Choose Team to Edit"),
                         items: teams.entries.map((e) => DropdownMenuItem<String>(
                           value: e.key.toString(),

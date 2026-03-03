@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
@@ -85,7 +83,7 @@ class _StandingsScreenState extends State<StandingsScreen> {
                       hintStyle: const TextStyle(color: Colors.white60),
                       prefixIcon: const Icon(Icons.search, color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.1),
+                      fillColor: Colors.white.withOpacityValue(0.1),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       isDense: true,
                     ),
@@ -187,7 +185,7 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
                 trailing: Text("Score: ${s['score']} | Rank: ${s['rank']}", style: const TextStyle(fontWeight: FontWeight.bold)),
               )).toList(),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -332,7 +330,7 @@ class _RankingCard extends StatelessWidget {
       children: [
         Container(
           margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: isTop ? const Color(0xFF2264D7) : Colors.grey.shade100,
@@ -342,7 +340,7 @@ class _RankingCard extends StatelessWidget {
             subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacityValue(0.1), borderRadius: BorderRadius.circular(8)),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(trailingValue, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
                 Text(trailingLabel, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),

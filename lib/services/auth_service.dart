@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 
@@ -24,10 +25,10 @@ class AuthService {
       return _userFromFirebase(result.user);
     } on FirebaseAuthException catch (e) {
       // Professional logging for specific Firebase errors
-      print("Auth Error (Register): ${e.code}");
+      log("Auth Error (Register): ${e.code}");
       return null;
     } catch (e) {
-      print("General Error: $e");
+      log("General Error: $e");
       return null;
     }
   }
@@ -41,10 +42,10 @@ class AuthService {
       );
       return _userFromFirebase(result.user);
     } on FirebaseAuthException catch (e) {
-      print("Auth Error (Login): ${e.code}");
+      log("Auth Error (Login): ${e.code}");
       return null;
     } catch (e) {
-      print("General Error: $e");
+      log("General Error: $e");
       return null;
     }
   }
@@ -54,7 +55,7 @@ class AuthService {
     try {
       await _auth.signOut();
     } catch (e) {
-      print("Sign Out Error: $e");
+      log("Sign Out Error: $e");
     }
   }
 }

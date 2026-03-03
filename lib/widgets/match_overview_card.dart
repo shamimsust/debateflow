@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import '../../models/debate_models.dart'; // Standardized import
 
 class MatchOverviewCard extends StatelessWidget {
@@ -54,7 +55,7 @@ class MatchOverviewCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: rank == 1 ? Colors.blue.withOpacity(0.02) : null,
+        color: rank == 1 ? Colors.blue.withOpacityValue(0.02) : null,
         border: Border(bottom: BorderSide(color: Colors.grey.shade50)),
       ),
       child: Column(

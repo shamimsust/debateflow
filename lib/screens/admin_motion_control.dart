@@ -131,15 +131,20 @@ class _AdminMotionControlState extends State<AdminMotionControl> {
     ) ?? false;
 
     if (confirm && mounted) {
-      await context.read<MotionService>().setMotion(
+      final motionService = context.read<MotionService>();
+      await motionService.setMotion(
         tId: widget.tournamentId,
         round: _selectedRound,
         motionText: _motionController.text.trim(),
         infoSlide: _infoController.text.trim(),
       );
+      if (!mounted) return;
       
-      await context.read<MotionService>().releaseMotion(widget.tournamentId, _selectedRound);
+      await motionService.releaseMotion(widget.tournamentId, _selectedRound);
+      if (!mounted) return;
+      
       await _updateGlobalRound(_selectedRound);
+      if (!mounted) return;
       
       _launchReveal();
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../utils/color_extensions.dart';
 import '../services/auth_service.dart';
 import 'add_team_screen.dart'; 
 import 'standings_screen.dart'; 
@@ -59,8 +60,11 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout_rounded),
             onPressed: () async {
+              final ctx = context;
               await AuthService().signOut();
-              if (mounted) Navigator.pop(context);
+              if (!mounted) return;
+              // ignore: use_build_context_synchronously
+              Navigator.pop(ctx);
             },
           ),
         ],
@@ -161,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(15),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.02), blurRadius: 10)],
             ),
             child: Row(
               children: [
@@ -210,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text("ROUND $_currentRound STATUS", 
-                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    style: TextStyle(color: Colors.white.withOpacityValue(0.7), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                   Text(inProgress ? "Matches Live" : "Waiting for Pairings", 
                     style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
@@ -245,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+                decoration: BoxDecoration(color: color.withOpacityValue(0.1), shape: BoxShape.circle),
                 child: Icon(icon, size: 28, color: color),
               ),
               const SizedBox(height: 10),

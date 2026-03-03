@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import '../models/user_model.dart';
@@ -106,13 +107,13 @@ class TournamentListScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         leading: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacityValue(0.1), borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.gavel_rounded, color: Color(0xFF2264D7)),
         ),
         title: Text(tourneyName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),

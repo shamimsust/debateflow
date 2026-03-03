@@ -33,7 +33,7 @@ class _AuthScreenState extends State<AuthScreen> {
           IconButton(
             icon: Icon(
               Icons.health_and_safety_outlined, 
-              color: checkingHealth ? const Color(0xFF46C3D7) : Colors.grey.withOpacity(0.5)
+              color: checkingHealth ? const Color(0xFF46C3D7) : Colors.grey.withAlpha((0.5 * 255).round())
             ),
             tooltip: 'System Health Check',
             onPressed: checkingHealth ? null : _runSystemCheck,
