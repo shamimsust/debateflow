@@ -1,43 +1,45 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:share_plus/share_plus.dart';
-import '../utils/color_extensions.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
 class TeamStanding {
+  final String id;
   final String teamName;
-  final double wins;
+  final double wins; 
   final double totalMarks;
-  TeamStanding({required this.teamName, required this.wins, required this.totalMarks});
+  TeamStanding({required this.id, required this.teamName, required this.wins, required this.totalMarks});
 }
 
 class SpeakerStanding {
   final String speakerName;
   final String teamName;
   final double totalSubstantivePoints;
+  final int totalRank; // For BP
   final int matchesPlayed;
 
   SpeakerStanding({
     required this.speakerName, 
     required this.teamName, 
     required this.totalSubstantivePoints, 
+    required this.totalRank,
     required this.matchesPlayed
   });
 
   double get averageScore => matchesPlayed == 0 ? 0 : totalSubstantivePoints / matchesPlayed;
+  double get averageRank => matchesPlayed == 0 ? 0 : totalRank / matchesPlayed;
 }
 
-// Internal helper for data processing
 class _MatchPerformance {
+  final int round;
   final String name;
   final String team;
   final double score;
-  _MatchPerformance({required this.name, required this.team, required this.score});
+  final int rank;
+  _MatchPerformance({required this.round, required this.name, required this.team, required this.score, required this.rank});
 }
 
 // --- MAIN STANDINGS SCREEN ---
@@ -59,23 +61,22 @@ class _StandingsScreenState extends State<StandingsScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFF1F5F9),
         appBar: AppBar(
-          title: const Text("RANKINGS", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+          title: const Text("TOURNAMENT RANKINGS", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
           backgroundColor: const Color(0xFF2264D7),
           foregroundColor: Colors.white,
-          elevation: 2,
           actions: [
             TextButton.icon(
               onPressed: () => Navigator.push(
                 context, 
                 MaterialPageRoute(builder: (context) => PublicResultsScreen(tournamentId: widget.tournamentId))
               ),
-              icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-              label: const Text("PUBLISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              icon: const Icon(Icons.public, color: Colors.white, size: 18),
+              label: const Text("LIVE FEED", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(width: 8),
           ],
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(100),
+            preferredSize: const Size.fromHeight(110),
             child: Column(
               children: [
                 Padding(
@@ -96,9 +97,6 @@ class _StandingsScreenState extends State<StandingsScreen> {
                 ),
                 const TabBar(
                   indicatorColor: Colors.white,
-                  indicatorWeight: 4,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white60,
                   tabs: [Tab(text: "TEAMS"), Tab(text: "SPEAKERS")],
                 ),
               ],
@@ -116,7 +114,7 @@ class _StandingsScreenState extends State<StandingsScreen> {
   }
 }
 
-// --- THE RESULTS FEED SCREEN ---
+// --- PUBLIC RESULTS FEED ---
 class PublicResultsScreen extends StatefulWidget {
   final String tournamentId;
   const PublicResultsScreen({super.key, required this.tournamentId});
@@ -126,38 +124,11 @@ class PublicResultsScreen extends StatefulWidget {
 }
 
 class _PublicResultsScreenState extends State<PublicResultsScreen> {
-  final ScreenshotController screenshotController = ScreenshotController();
-
   void _sharePublicLink() {
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
-    final String shareUrl = "$baseUrl/#/results?tid=${widget.tournamentId}";
+    final String shareUrl = "$baseUrl/results?tid=${widget.tournamentId}";
     Clipboard.setData(ClipboardData(text: shareUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Results link copied!"), backgroundColor: Colors.green),
-    );
-  }
-
-  Future<void> _exportAndShareImage() async {
-    try {
-      final Uint8List? imageBytes = await screenshotController.capture();
-      if (imageBytes != null) {
-        if (kIsWeb) {
-          _sharePublicLink();
-        } else {
-          final directory = await getTemporaryDirectory();
-          final file = await File('${directory.path}/official_results.png').create();
-          await file.writeAsBytes(imageBytes);
-          await SharePlus.instance.share(
-            ShareParams(
-              files: [XFile(file.path)],
-              text: 'Tournament Official Results',
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint("Export Error: $e");
-    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link copied!"), backgroundColor: Colors.green));
   }
 
   @override
@@ -166,64 +137,55 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        title: const Text("OFFICIAL RESULTS"),
-        backgroundColor: const Color(0xFF2264D7),
+        title: const Text("OFFICIAL BALLOTS"),
+        backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(icon: const Icon(Icons.link_rounded), onPressed: _sharePublicLink),
-          IconButton(icon: const Icon(Icons.image_rounded), onPressed: _exportAndShareImage),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.link_rounded), onPressed: _sharePublicLink)],
       ),
-      body: Screenshot(
-        controller: screenshotController,
-        child: Container(
-          color: const Color(0xFFF1F5F9),
-          child: StreamBuilder(
-            stream: ballotsRef.onValue,
-            builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-              if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                return const Center(child: Text("No results published yet."));
-              }
-              Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
-              List<MapEntry> ballotList = data.entries.toList();
-              ballotList.sort((a, b) => (b.value['round'] ?? 0).compareTo(a.value['round'] ?? 0));
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: ballotList.length,
-                itemBuilder: (context, index) => _buildResultCard(ballotList[index].value),
-              );
-            },
-          ),
-        ),
+      body: StreamBuilder(
+        stream: ballotsRef.onValue,
+        builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+          if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for ballots..."));
+          Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+          List<MapEntry> ballotList = data.entries.toList();
+          ballotList.sort((a, b) => (b.value['round'] ?? 0).compareTo(a.value['round'] ?? 0));
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: ballotList.length,
+            itemBuilder: (context, index) => _buildBallotCard(ballotList[index].value),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildResultCard(dynamic data) {
+  Widget _buildBallotCard(dynamic data) {
     Map results = Map<dynamic, dynamic>.from(data['results'] as Map);
+    var sortedTeams = results.entries.toList();
+    sortedTeams.sort((a, b) => (a.value['rank'] ?? 0).compareTo(b.value['rank'] ?? 0));
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("ROUND ${data['round']}", style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
-            const Divider(),
-            ...results.entries.map((e) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(e.value['teamName'], style: TextStyle(fontWeight: e.value['rank'] == 1 ? FontWeight.bold : FontWeight.normal)),
-                  if (e.value['rank'] == 1) const Icon(Icons.stars_rounded, color: Colors.orange, size: 18),
-                ],
-              ),
-            )),
-          ],
-        ),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          ListTile(
+            tileColor: Colors.grey.shade50,
+            title: Text("ROUND ${data['round']} • ROOM ${data['room']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+          ...sortedTeams.map((t) {
+            var teamData = t.value;
+            List speakers = (teamData['speakers'] as List? ?? []);
+            return ExpansionTile(
+              title: Text("${teamData['rank']}. ${teamData['teamName']}"),
+              trailing: Text("${teamData['total']} pts"),
+              children: speakers.map((s) => ListTile(
+                dense: true,
+                title: Text(s['name'] ?? "Speaker"),
+                trailing: Text("Score: ${s['score']} | Rank: ${s['rank']}"),
+              )).toList(),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -237,37 +199,59 @@ class _TeamRankingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final teamsRef = FirebaseDatabase.instance.ref('teams/$tournamentId');
     return StreamBuilder(
-      stream: teamsRef.onValue,
+      stream: FirebaseDatabase.instance.ref().onValue,
       builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("No teams registered."));
-        Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final db = snapshot.data!.snapshot.value as Map?;
+        final teamData = db?['teams']?[tournamentId] as Map?;
+        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+        final String rule = tourneyData?['rule'] ?? "WSDC";
+
+        if (teamData == null) return const Center(child: Text("No teams found."));
+
         List<TeamStanding> teams = [];
-        data.forEach((key, value) {
+        teamData.forEach((key, value) {
           if (value['name'].toString().toLowerCase().contains(query)) {
             teams.add(TeamStanding(
+              id: key,
               teamName: value['name'] ?? "Team",
               wins: (value['wins'] ?? 0).toDouble(),
               totalMarks: (value['totalMarks'] ?? 0).toDouble(),
             ));
           }
         });
+
         teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
+
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: teams.length,
           itemBuilder: (context, index) => _RankingCard(
-            index: index, title: teams[index].teamName, subtitle: "Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
-            trailingValue: teams[index].wins.toStringAsFixed(0), trailingLabel: "WINS", isTeam: true,
+            index: index, 
+            title: teams[index].teamName, 
+            subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
+            trailingValue: teams[index].wins.toStringAsFixed(0), 
+            trailingLabel: rule == "BP" ? "POINTS" : "WINS", 
+            isTeam: true,
+            onTap: () => _showTeamDetails(context, tournamentId, teams[index]),
           ),
         );
       },
     );
   }
+
+  void _showTeamDetails(BuildContext context, String tid, TeamStanding team) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => _DetailsSheet(title: team.teamName, tid: tid, filterId: team.teamName, isTeam: true),
+    );
+  }
 }
 
-// --- SPEAKER RANKINGS TAB (FIXED FOR IRONMAN) ---
+// --- SPEAKER RANKINGS TAB ---
 class _SpeakerRankingsTab extends StatelessWidget {
   final String tournamentId;
   final String query;
@@ -275,17 +259,16 @@ class _SpeakerRankingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ballotsRef = FirebaseDatabase.instance.ref('ballots/$tournamentId');
     return StreamBuilder(
-      stream: ballotsRef.onValue,
+      stream: FirebaseDatabase.instance.ref().onValue,
       builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-          return const Center(child: Text("Rankings will appear after the first ballot."));
-        }
-
-        Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         
-        // Key: "SpeakerName-TeamName" -> List of averaged scores per match
+        final db = snapshot.data!.snapshot.value as Map?;
+        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+        final String rule = tourneyData?['rule'] ?? "WSDC";
+        final Map ballots = Map<dynamic, dynamic>.from(db?['ballots']?[tournamentId] ?? {});
+
         Map<String, List<_MatchPerformance>> speakerPerformances = {};
 
         ballots.forEach((mId, bData) {
@@ -293,49 +276,33 @@ class _SpeakerRankingsTab extends StatelessWidget {
             Map res = Map<dynamic, dynamic>.from(bData['results'] as Map);
             res.forEach((tId, tData) {
               String teamName = tData['teamName'] ?? "Unknown";
-              List speeches = tData['speeches'] ?? [];
-              
-              // Handle Ironman: Group scores by speaker name for THIS MATCH only
-              Map<String, List<double>> matchScoresBySpeaker = {};
-
-              for (int i = 0; i < speeches.length; i++) {
-                var s = speeches[i];
-                String name = s['speakerName'] ?? "Unknown";
+              List speakers = tData['speakers'] ?? tData['speeches'] ?? [];
+              for (var s in speakers) {
+                String name = s['name'] ?? s['speakerName'] ?? "Unknown";
                 double score = (s['score'] ?? 0).toDouble();
-                bool isSubstantive = i < 3; // Indices 0, 1, 2 are substantive in WSDC
-
-                if (name != "Unknown" && score > 0 && isSubstantive) {
-                  matchScoresBySpeaker.putIfAbsent(name, () => []).add(score);
+                int rank = (s['rank'] ?? 0).toInt();
+                if (name != "Unknown" && score > 0) {
+                  String key = "$name-$teamName";
+                  speakerPerformances.putIfAbsent(key, () => []).add(
+                    _MatchPerformance(round: bData['round'] ?? 0, name: name, team: teamName, score: score, rank: rank)
+                  );
                 }
               }
-
-              // Save the effective (averaged) match score for each speaker
-              matchScoresBySpeaker.forEach((name, scores) {
-                // If Ironman (2 scores), this calculates the average for the match
-                double effectiveMatchScore = scores.reduce((a, b) => a + b) / scores.length;
-                
-                String key = "$name-$teamName";
-                speakerPerformances.putIfAbsent(key, () => []).add(
-                  _MatchPerformance(name: name, team: teamName, score: effectiveMatchScore)
-                );
-              });
             });
           }
         });
 
-        // Convert grouped performances into ranked SpeakerStanding list
         List<SpeakerStanding> speakers = speakerPerformances.entries.map((e) {
-          double totalAveragedPoints = e.value.fold(0.0, (sum, match) => sum + match.score);
           return SpeakerStanding(
             speakerName: e.value.first.name,
             teamName: e.value.first.team,
-            totalSubstantivePoints: totalAveragedPoints,
+            totalSubstantivePoints: e.value.fold(0.0, (sum, m) => sum + m.score),
+            totalRank: e.value.fold(0, (sum, m) => sum + m.rank),
             matchesPlayed: e.value.length,
           );
         }).where((s) => s.speakerName.toLowerCase().contains(query)).toList();
 
-        // Sort by average score (Standard Debating Practice)
-        speakers.sort((a, b) => b.averageScore.compareTo(a.averageScore));
+        speakers.sort((a, b) => rule == "BP" ? a.averageRank.compareTo(b.averageRank) : b.averageScore.compareTo(a.averageScore));
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -345,11 +312,82 @@ class _SpeakerRankingsTab extends StatelessWidget {
             title: speakers[index].speakerName, 
             subtitle: speakers[index].teamName,
             trailingValue: speakers[index].averageScore.toStringAsFixed(2), 
-            trailingLabel: "AVG", 
+            trailingLabel: rule == "BP" ? "AVG RNK" : "AVG", 
             isTeam: false,
+            onTap: () => _showSpeakerDetails(context, tournamentId, speakers[index]),
           ),
         );
       },
+    );
+  }
+
+  void _showSpeakerDetails(BuildContext context, String tid, SpeakerStanding speaker) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => _DetailsSheet(title: speaker.speakerName, tid: tid, filterId: speaker.speakerName, isTeam: false),
+    );
+  }
+}
+
+// --- DRILL DOWN DETAILS SHEET ---
+class _DetailsSheet extends StatelessWidget {
+  final String title;
+  final String tid;
+  final String filterId;
+  final bool isTeam;
+  const _DetailsSheet({required this.title, required this.tid, required this.filterId, required this.isTeam});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      height: MediaQuery.of(context).size.height * 0.7,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+          const Divider(),
+          Expanded(
+            child: StreamBuilder(
+              stream: FirebaseDatabase.instance.ref('ballots/$tid').onValue,
+              builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+                if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("No match history."));
+                Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+                List<_MatchPerformance> history = [];
+
+                ballots.forEach((k, b) {
+                  Map res = Map<dynamic, dynamic>.from(b['results'] ?? {});
+                  res.forEach((tId, tData) {
+                    if (isTeam && tData['teamName'] == filterId) {
+                      history.add(_MatchPerformance(round: b['round'], name: tData['teamName'], team: "", score: (tData['total'] ?? 0).toDouble(), rank: tData['rank'] ?? 0));
+                    } else if (!isTeam) {
+                      List speakers = tData['speakers'] ?? tData['speeches'] ?? [];
+                      for (var s in speakers) {
+                        if ((s['name'] ?? s['speakerName']) == filterId) {
+                          history.add(_MatchPerformance(round: b['round'], name: filterId, team: tData['teamName'], score: (s['score'] ?? 0).toDouble(), rank: s['rank'] ?? 0));
+                        }
+                      }
+                    }
+                  });
+                });
+                history.sort((a, b) => a.round.compareTo(b.round));
+
+                return ListView.builder(
+                  itemCount: history.length,
+                  itemBuilder: (context, i) => ListTile(
+                    leading: CircleAvatar(child: Text("R${history[i].round}")),
+                    title: Text(isTeam ? "Team Result" : "Speaker Score"),
+                    subtitle: Text("Rank: ${history[i].rank}"),
+                    trailing: Text("${history[i].score}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -362,39 +400,34 @@ class _RankingCard extends StatelessWidget {
   final String trailingValue;
   final String trailingLabel;
   final bool isTeam;
-  const _RankingCard({required this.index, required this.title, required this.subtitle, required this.trailingValue, required this.trailingLabel, required this.isTeam});
+  final VoidCallback onTap;
+  const _RankingCard({required this.index, required this.title, required this.subtitle, required this.trailingValue, required this.trailingLabel, required this.isTeam, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    bool isTop3 = index < 3;
-    return Column(
-      children: [
-        Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isTop3 ? const Color(0xFF2264D7) : Colors.grey.shade100,
-              child: Text("${index + 1}", style: TextStyle(color: isTop3 ? Colors.white : Colors.blueGrey, fontWeight: FontWeight.bold)),
-            ),
-            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacityValue(0.1), borderRadius: BorderRadius.circular(10)),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(trailingValue, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
-                Text(trailingLabel, style: const TextStyle(fontSize: 7, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
-              ]),
-            ),
+    bool isTop = index < 3;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: isTop ? const Color(0xFF2264D7) : Colors.grey.shade100,
+            child: Text("${index + 1}", style: TextStyle(color: isTop ? Colors.white : Colors.black87, fontWeight: FontWeight.bold)),
+          ),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacityValue(0.1), borderRadius: BorderRadius.circular(8)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(trailingValue, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+              Text(trailingLabel, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
+            ]),
           ),
         ),
-        // Visual break for Break rounds (Top 4 teams usually break to Semis)
-        if (isTeam && index == 3) const Padding(
-          padding: EdgeInsets.only(bottom: 12.0),
-          child: Divider(color: Colors.redAccent, thickness: 1.5, indent: 20, endIndent: 20),
-        ),
-      ],
+      ),
     );
   }
 }

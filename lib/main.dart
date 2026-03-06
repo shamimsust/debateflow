@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // ✅ Fixes 'kIsWeb'
+import 'package:flutter/foundation.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_web_plugins/url_strategy.dart'; 
@@ -16,10 +16,10 @@ import 'models/user_model.dart';
 
 // Screens
 import 'screens/wrapper.dart';
-import 'screens/standings_screen.dart'; // Ensure PublicResultsScreen is here
+import 'screens/standings_screen.dart'; 
 
 void main() {
-  // ✅ Clean URLs (No '#' on web)
+  // ✅ Clean URLs (Removes the # hash)
   if (kIsWeb) {
     usePathUrlStrategy();
   }
@@ -45,7 +45,6 @@ class _DebateFlowAppState extends State<DebateFlowApp> {
     _initialize();
   }
 
-  // 🚀 Initialize Firebase & Services
   Future<void> _initialize() async {
     try {
       await Firebase.initializeApp(
@@ -57,66 +56,41 @@ class _DebateFlowAppState extends State<DebateFlowApp> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // 1. Show Error Screen if something breaks
-    if (_error != null) {
-      return MaterialApp(
-        home: Scaffold(
-          body: Center(child: Text("Fatal Error: $_error", style: const TextStyle(color: Colors.red))),
-        ),
-      );
-    }
-
-    // 2. Show Splash Screen while loading
-    if (!_isInitialized) {
-      return const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: _SplashScreen(),
-      );
-    }
-
-    // 3. Main App with Providers
-    return MultiProvider(
-      providers: [
-        StreamProvider<AppUser?>(
-          create: (_) => AuthService().user,
-          initialData: null,
-          catchError: (_, _) => null,
-        ),
-        Provider<MotionService>(create: (_) => MotionService()),
-        Provider<MatchService>(create: (_) => MatchService()),
-        Provider<StandingsService>(create: (_) => StandingsService()),
-      ],
-      child: MaterialApp(
-        title: 'DebateFlow 2026',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2264D7)),
-          fontFamily: 'Inter',
-        ),
-        onGenerateRoute: (settings) {
-          final Uri uri = Uri.parse(settings.name ?? "/");
-          
-          if (uri.path == '/results') {
-            final String? tid = uri.queryParameters['tid'];
-            if (tid != null) {
-              return MaterialPageRoute(
-                builder: (context) => PublicResultsScreen(tournamentId: tid),
-              );
-            }
-          }
-          return MaterialPageRoute(builder: (context) => const Wrapper());
-        },
-      ),
-    );
+ // main.dart - Build Method
+@override
+Widget build(BuildContext context) {
+  if (_error != null) {
+    return MaterialApp(home: Scaffold(body: Center(child: Text("Error: $_error"))));
   }
+
+  if (!_isInitialized) {
+    return const MaterialApp(debugShowCheckedModeBanner: false, home: _SplashScreen());
+  }
+
+  return MultiProvider(
+    providers: [
+      StreamProvider<AppUser?>(
+        create: (_) => AuthService().user,
+        initialData: null,
+      ),
+      Provider<MotionService>(create: (_) => MotionService()),
+      Provider<MatchService>(create: (_) => MatchService()),
+      Provider<StandingsService>(create: (_) => StandingsService()),
+    ],
+    child: MaterialApp(
+      title: 'DebateFlow 2026',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF2264D7)),
+      // ✅ SIMPLIFY: Just point everything to the Wrapper.
+      // We will handle the "Bypass" inside the Wrapper's build method.
+      home: const Wrapper(),
+    ),
+  );
+}
 }
 
-// --- BEAUTIFUL SPLASH UI ---
 class _SplashScreen extends StatelessWidget {
-  const _SplashScreen(); // Added key for best practice
+  const _SplashScreen(); 
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +100,6 @@ class _SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // ✅ Fixed: record_voice_over (lowercase)
             const Icon(Icons.record_voice_over_rounded, size: 80, color: Colors.white),
             const SizedBox(height: 24),
             const Text(
@@ -139,7 +112,6 @@ class _SplashScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 48),
-            // ✅ Always keep the indicator white for dark backgrounds
             const SizedBox(
               width: 30,
               height: 30,

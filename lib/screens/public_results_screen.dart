@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 // --- MODELS ---
 class TeamStanding {
   final String teamName;
-  final double wins; // For BP, this acts as Total Rank Points
+  final double wins; // BP: Total Rank Points (0-3)
   final double totalMarks;
   TeamStanding({required this.teamName, required this.wins, required this.totalMarks});
 }
@@ -17,23 +17,27 @@ class SpeakerStanding {
   final String speakerName;
   final String teamName;
   final double totalSubstantivePoints;
+  final int totalRank; // BP: Individual Rank sum
   final int matchesPlayed;
 
   SpeakerStanding({
     required this.speakerName, 
     required this.teamName, 
     required this.totalSubstantivePoints, 
+    required this.totalRank,
     required this.matchesPlayed
   });
 
   double get averageScore => matchesPlayed == 0 ? 0 : totalSubstantivePoints / matchesPlayed;
+  double get averageRank => matchesPlayed == 0 ? 0 : totalRank / matchesPlayed;
 }
 
 class _MatchPerformance {
   final String name;
   final String team;
   final double score;
-  _MatchPerformance({required this.name, required this.team, required this.score});
+  final int rank;
+  _MatchPerformance({required this.name, required this.team, required this.score, required this.rank});
 }
 
 // --- MAIN STANDINGS SCREEN ---
@@ -118,13 +122,15 @@ class PublicResultsScreen extends StatefulWidget {
 }
 
 class _PublicResultsScreenState extends State<PublicResultsScreen> {
-  final ScreenshotController screenshotController = ScreenshotController();
-
   void _sharePublicLink() {
+    // ✅ Fix: Clean URL for Web
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
-    final String shareUrl = "$baseUrl/#/results?tid=${widget.tournamentId}";
+    final String shareUrl = "$baseUrl/results?tid=${widget.tournamentId}";
+    
     Clipboard.setData(ClipboardData(text: shareUrl));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Public link copied!"), backgroundColor: Colors.green));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Public link copied!"), backgroundColor: Colors.green)
+    );
   }
 
   @override
@@ -143,7 +149,9 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
       body: StreamBuilder(
         stream: ballotsRef.onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-          if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for ballots..."));
+          if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
+            return const Center(child: Text("Waiting for ballots..."));
+          }
           
           Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
           List<MapEntry> ballotList = data.entries.toList();
@@ -162,27 +170,40 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
   Widget _buildBallotCard(dynamic data) {
     Map results = Map<dynamic, dynamic>.from(data['results'] as Map);
     var sortedTeams = results.entries.toList();
+    // ✅ BP Sort: 1st place to 4th place
     sortedTeams.sort((a, b) => (a.value['rank'] ?? 0).compareTo(b.value['rank'] ?? 0));
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
       child: Column(
         children: [
           ListTile(
-            tileColor: Colors.grey.shade50,
-            title: Text("ROUND ${data['round']} • ROOM ${data['room']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-            trailing: const Icon(Icons.verified, color: Colors.green, size: 16),
+            tileColor: Colors.grey.shade100,
+            dense: true,
+            title: Text("ROUND ${data['round']} • ROOM ${data['room']}", 
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+            trailing: const Icon(Icons.verified_user_rounded, color: Colors.green, size: 18),
           ),
           ...sortedTeams.map((t) {
             var teamData = t.value;
+            int rank = teamData['rank'] ?? 0;
             List speakers = (teamData['speakers'] as List? ?? []);
+            
             return ExpansionTile(
-              title: Text("${teamData['rank']}. ${teamData['teamName']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: rank == 1 ? Colors.amber : Colors.blueGrey.withOpacity(0.1),
+                child: Text("$rank", style: TextStyle(fontSize: 12, color: rank == 1 ? Colors.white : Colors.black)),
+              ),
+              title: Text(teamData['teamName'], 
+                style: TextStyle(fontWeight: rank == 1 ? FontWeight.bold : FontWeight.normal)),
               trailing: Text("${teamData['total']} pts"),
               children: speakers.map((s) => ListTile(
                 dense: true,
                 title: Text(s['name'] ?? "Speaker"),
-                trailing: Text("Score: ${s['score']} | Rank: ${s['rank']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                trailing: Text("Score: ${s['score']} | Rank: ${s['rank']}", 
+                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 11)),
               )).toList(),
             );
           }),
@@ -223,6 +244,7 @@ class _TeamRankingsTab extends StatelessWidget {
           }
         });
 
+        // BP/WSDC Sorting logic
         teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
 
         return ListView.builder(
@@ -251,11 +273,15 @@ class _SpeakerRankingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder(
-      stream: FirebaseDatabase.instance.ref('ballots/$tournamentId').onValue,
+      stream: FirebaseDatabase.instance.ref().onValue,
       builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for results..."));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-        Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+        final db = snapshot.data!.snapshot.value as Map?;
+        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+        final String rule = tourneyData?['rule'] ?? "WSDC";
+        final Map ballots = Map<dynamic, dynamic>.from(db?['ballots']?[tournamentId] ?? {});
+
         Map<String, List<_MatchPerformance>> speakerPerformances = {};
 
         ballots.forEach((mId, bData) {
@@ -263,24 +289,19 @@ class _SpeakerRankingsTab extends StatelessWidget {
             Map res = Map<dynamic, dynamic>.from(bData['results'] as Map);
             res.forEach((tId, tData) {
               String teamName = tData['teamName'] ?? "Unknown";
-              List speeches = (tData['speakers'] as List? ?? []); // Sync with BallotScreen key
+              List speeches = (tData['speakers'] as List? ?? []); 
               
-              Map<String, List<double>> matchScoresBySpeaker = {};
               for (var s in speeches) {
                 String name = s['name'] ?? "Unknown";
                 double score = (s['score'] ?? 0).toDouble();
+                int rank = (s['rank'] ?? 0).toInt();
                 if (name != "Unknown" && score > 0) {
-                  matchScoresBySpeaker.putIfAbsent(name, () => []).add(score);
+                  String key = "$name-$teamName";
+                  speakerPerformances.putIfAbsent(key, () => []).add(
+                    _MatchPerformance(name: name, team: teamName, score: score, rank: rank)
+                  );
                 }
               }
-
-              matchScoresBySpeaker.forEach((name, scores) {
-                double effectiveMatchScore = scores.reduce((a, b) => a + b) / scores.length;
-                String key = "$name-$teamName";
-                speakerPerformances.putIfAbsent(key, () => []).add(
-                  _MatchPerformance(name: name, team: teamName, score: effectiveMatchScore)
-                );
-              });
             });
           }
         });
@@ -289,12 +310,19 @@ class _SpeakerRankingsTab extends StatelessWidget {
           return SpeakerStanding(
             speakerName: e.value.first.name,
             teamName: e.value.first.team,
-            totalSubstantivePoints: e.value.fold(0.0, (sum, match) => sum + match.score),
+            totalSubstantivePoints: e.value.fold(0.0, (sum, m) => sum + m.score),
+            totalRank: e.value.fold(0, (sum, m) => sum + m.rank),
             matchesPlayed: e.value.length,
           );
         }).where((s) => s.speakerName.toLowerCase().contains(query)).toList();
 
-        speakers.sort((a, b) => b.averageScore.compareTo(a.averageScore));
+        // BP Sorting: Lower Rank is better, then higher score
+        speakers.sort((a, b) {
+          if (rule == "BP" && a.averageRank != b.averageRank) {
+            return a.averageRank.compareTo(b.averageRank);
+          }
+          return b.averageScore.compareTo(a.averageScore);
+        });
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -302,7 +330,9 @@ class _SpeakerRankingsTab extends StatelessWidget {
           itemBuilder: (context, index) => _RankingCard(
             index: index, 
             title: speakers[index].speakerName, 
-            subtitle: speakers[index].teamName,
+            subtitle: rule == "BP" 
+              ? "${speakers[index].teamName} • Avg Rank: ${speakers[index].averageRank.toStringAsFixed(2)}"
+              : speakers[index].teamName,
             trailingValue: speakers[index].averageScore.toStringAsFixed(2), 
             trailingLabel: "AVG", 
             isTeam: false,
@@ -330,17 +360,25 @@ class _RankingCard extends StatelessWidget {
       children: [
         Container(
           margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]),
+          decoration: BoxDecoration(
+            color: Colors.white, 
+            borderRadius: BorderRadius.circular(15), 
+            boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]
+          ),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: isTop ? const Color(0xFF2264D7) : Colors.grey.shade100,
-              child: Text("${index + 1}", style: TextStyle(color: isTop ? Colors.white : Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
+              child: Text("${index + 1}", 
+                style: TextStyle(color: isTop ? Colors.white : Colors.black87, fontWeight: FontWeight.bold)),
             ),
             title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFF2264D7).withOpacityValue(0.1), borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2264D7).withOpacityValue(0.1), 
+                borderRadius: BorderRadius.circular(8)
+              ),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(trailingValue, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
                 Text(trailingLabel, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2264D7))),
@@ -350,7 +388,7 @@ class _RankingCard extends StatelessWidget {
         ),
         if (isTeam && index == 3) const Padding(
           padding: EdgeInsets.symmetric(vertical: 8.0),
-          child: Divider(color: Colors.redAccent, thickness: 1.5, indent: 40, endIndent: 40),
+          child: Divider(color: Colors.redAccent, thickness: 1.5, indent: 60, endIndent: 60),
         ),
       ],
     );
