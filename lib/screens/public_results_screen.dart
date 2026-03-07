@@ -4,6 +4,7 @@ import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:flutter/services.dart';
+import '../utils/web_utils.dart';
 
 // --- MODELS ---
 class TeamStanding {
@@ -123,14 +124,21 @@ class PublicResultsScreen extends StatefulWidget {
 
 class _PublicResultsScreenState extends State<PublicResultsScreen> {
   void _sharePublicLink() {
-    // ✅ Fix: Clean URL for Web
+    // ✅ Clean URL for Web and include ID in the path so both
+    //    query-parameter and segment-based routing work.
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
-    final String shareUrl = "$baseUrl/results?tid=${widget.tournamentId}";
-    
+    final String shareUrl = "$baseUrl/results/${widget.tournamentId}";
+
+    // copy and feedback
     Clipboard.setData(ClipboardData(text: shareUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Public link copied!"), backgroundColor: Colors.green)
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text("Public link copied:\n$shareUrl"),
+      backgroundColor: Colors.green,
+      duration: const Duration(seconds: 4),
+    ));
+
+    // (no automatic navigation – just let the user open the link manually)
+
   }
 
   @override

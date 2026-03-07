@@ -4,6 +4,7 @@ import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:flutter/services.dart';
+import '../utils/web_utils.dart';
 
 // --- MODELS ---
 class TeamStanding {
@@ -126,9 +127,18 @@ class PublicResultsScreen extends StatefulWidget {
 class _PublicResultsScreenState extends State<PublicResultsScreen> {
   void _sharePublicLink() {
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
-    final String shareUrl = "$baseUrl/results?tid=${widget.tournamentId}";
+    final String shareUrl = "$baseUrl/results/${widget.tournamentId}";
+    debugPrint('sharePublicLink $shareUrl');
     Clipboard.setData(ClipboardData(text: shareUrl));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link copied!"), backgroundColor: Colors.green));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text("Link copied:\n$shareUrl"),
+      backgroundColor: Colors.green,
+      duration: const Duration(seconds: 4),
+    ));
+
+    if (kIsWeb) {
+      openUrl(shareUrl, '_blank');
+    }
   }
 
   @override

@@ -18,12 +18,23 @@ import 'models/user_model.dart';
 import 'screens/wrapper.dart';
 import 'screens/standings_screen.dart'; 
 
+// The actual variable lives in a separate utils file so that other
+// modules (like Wrapper) can import it without creating a circular import.
+import 'utils/startup_utils.dart';
+
+
 void main() {
   // ✅ Clean URLs (Removes the # hash)
   if (kIsWeb) {
     usePathUrlStrategy();
   }
   
+  // capture the URL right now
+  if (kIsWeb) {
+    initialLaunchHref = Uri.base.toString();
+    debugPrint('main captured initialLaunchHref = $initialLaunchHref');
+  }
+
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const DebateFlowApp());
 }
@@ -80,9 +91,34 @@ Widget build(BuildContext context) {
     child: MaterialApp(
       title: 'DebateFlow 2026',
       debugShowCheckedModeBanner: false,
+      initialRoute: '/',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF2264D7)),
-      // ✅ SIMPLIFY: Just point everything to the Wrapper.
-      // We will handle the "Bypass" inside the Wrapper's build method.
+      // ---------------------------------------------
+      // deep link support for public results
+      // ---------------------------------------------
+      // Flutter's router will consult this before building
+      // the home widget.  The Wrapper still runs as a
+      // fallback, but adding this ensures that the correct
+      // screen is pushed even on hot reload or in dev
+      // environments where Uri.base parsing may differ.
+      onGenerateRoute: (settings) {
+        final uri = Uri.parse(settings.name ?? '');
+        debugPrint('onGenerateRoute: ${settings.name} -> $uri');
+        if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'results') {
+          String? tid;
+          if (uri.pathSegments.length > 1) {
+            tid = uri.pathSegments[1];
+          }
+          tid ??= uri.queryParameters['tid'];
+          if (tid != null && tid.isNotEmpty) {
+            final nonNullTid = tid; // local copy, flow ensures not null
+            return MaterialPageRoute(
+              builder: (_) => PublicResultsScreen(tournamentId: nonNullTid!),
+            );
+          }
+        }
+        return MaterialPageRoute(builder: (_) => const Wrapper());
+      },
       home: const Wrapper(),
     ),
   );
