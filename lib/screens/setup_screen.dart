@@ -450,17 +450,16 @@ class _ListManagerState extends State<_ListManager> {
                 }
               }
 
+                final ctx = context;
               try {
-              final ctx = context;
                 if (updates.isNotEmpty) {
-                  await widget.dbRef.update(updates); // one batched write
                 }
                 _bulkController.clear();
                 if (mounted) Navigator.pop(ctx);
               } on FirebaseException catch (e) {
                 debugPrint('Bulk add ${widget.label} error: ${e.code} ${e.message}');
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(ctx).showSnackBar(
                     SnackBar(content: Text('Bulk add failed: ${e.code}')),
                   );
                 }

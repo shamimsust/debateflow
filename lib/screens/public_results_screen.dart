@@ -199,7 +199,7 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
             return ExpansionTile(
               leading: CircleAvatar(
                 radius: 14,
-                backgroundColor: rank == 1 ? Colors.amber : Colors.blueGrey.withOpacity(0.1),
+                backgroundColor: rank == 1 ? Colors.amber : Colors.blueGrey.withAlpha((0.1 * 255).round()),
                 child: Text("$rank", style: TextStyle(fontSize: 12, color: rank == 1 ? Colors.white : Colors.black)),
               ),
               title: Text(teamData['teamName'], 
