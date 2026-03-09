@@ -3,6 +3,16 @@
 **DebateFlow** is a high-performance, real-time tournament management system built with Flutter and Firebase. Designed for WSDC, BP, and Asian Parliamentary formats, it handles everything from participant registration to power-paired matchups and live ballot adjudication.
 
 ---
+## Quickstart
+
+### Prerequisites
+- Flutter (stable channel) – check with `flutter --version`
+- Firebase CLI `npm i -g firebase-tools`
+- A Firebase project (we support Realtime Database + Auth)
+
+### 1) Install dependencies
+```bash
+flutter pub get
 
 ## 🚀 Key Features
 
