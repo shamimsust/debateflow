@@ -5,7 +5,7 @@ import 'home_screen.dart';
 
 class SetupScreen extends StatefulWidget {
   final String tournamentId;
-  const SetupScreen({Key? key, required this.tournamentId}) : super(key: key);
+  const SetupScreen({super.key, required this.tournamentId});
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
@@ -207,7 +207,7 @@ class _SetupScreenState extends State<SetupScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          value: selectedFormat,
+          initialValue: selectedFormat,
           decoration: const InputDecoration(
             labelText: "Format",
             border: OutlineInputBorder(),
@@ -374,12 +374,11 @@ class _ListManager extends StatefulWidget {
   final bool includeStatsFields; // teams need wins/totalMarks, others don't
 
   const _ListManager({
-    Key? key,
-    required this.dbRef,
-    required this.label,
-    required this.includeStatsFields,
-  }) : super(key: key);
-
+      // key never supplied by callers, so omit it to avoid analyzer warning
+      required this.dbRef,
+      required this.label,
+      required this.includeStatsFields,
+    });
   @override
   State<_ListManager> createState() => _ListManagerState();
 }
@@ -452,11 +451,12 @@ class _ListManagerState extends State<_ListManager> {
               }
 
               try {
+              final ctx = context;
                 if (updates.isNotEmpty) {
                   await widget.dbRef.update(updates); // one batched write
                 }
                 _bulkController.clear();
-                if (mounted) Navigator.pop(context);
+                if (mounted) Navigator.pop(ctx);
               } on FirebaseException catch (e) {
                 debugPrint('Bulk add ${widget.label} error: ${e.code} ${e.message}');
                 if (mounted) {
