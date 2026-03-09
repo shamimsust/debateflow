@@ -1,7 +1,7 @@
 // Conditional import to abstract away dart:html so the code can compile
 // on mobile without errors.
 
-library web_utils;
+library;
 
 import 'web_utils_stub.dart' if (dart.library.html) 'web_utils_html.dart';
 

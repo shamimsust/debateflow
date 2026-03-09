@@ -73,7 +73,7 @@ class Wrapper extends StatelessWidget {
 
       // if we still don't have one, try whatever href value we recorded
       // earlier (initialLaunchHref, initialHref, or current href).
-      if ((tid == null || tid.isEmpty) && href != null && href.isNotEmpty) {
+      if ((tid == null || tid.isEmpty) && href.isNotEmpty) {
         try {
           final hrefUri = Uri.parse(href);
           final got = extractTid(hrefUri);

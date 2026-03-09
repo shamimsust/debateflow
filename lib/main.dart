@@ -113,7 +113,7 @@ Widget build(BuildContext context) {
           if (tid != null && tid.isNotEmpty) {
             final nonNullTid = tid; // local copy, flow ensures not null
             return MaterialPageRoute(
-              builder: (_) => PublicResultsScreen(tournamentId: nonNullTid!),
+              builder: (_) => PublicResultsScreen(tournamentId: nonNullTid),
             );
           }
         }

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../utils/color_extensions.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:screenshot/screenshot.dart';
 import 'package:flutter/services.dart';
 import '../utils/web_utils.dart';
 
