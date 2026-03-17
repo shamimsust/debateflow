@@ -70,8 +70,9 @@ class MatchService {
     List<String> availableRooms = [];
     for (var child in roomsSnap.children) {
       final dynamic r = child.value;
-      if (r != null && r['name'] != null)
+      if (r != null && r['name'] != null) {
         availableRooms.add(r['name'].toString());
+      }
     }
 
     int teamsPerMatch = (rule == "BP") ? 4 : 2;

@@ -144,8 +144,9 @@ class _RoundViewState extends State<RoundView>
       // Listen to Round Status and Matches simultaneously
       stream: FirebaseDatabase.instance.ref().onValue,
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
 
         final dbData = snapshot.data!.snapshot.value as Map?;
         final roundSettings =
@@ -322,8 +323,9 @@ class _RoundViewState extends State<RoundView>
           ).map((e) => e['id']?.toString()).whereType<String>().toSet()
         : <String>{};
 
-    if ((matchData['judge'] as String?)?.isNotEmpty ?? false)
+    if ((matchData['judge'] as String?)?.isNotEmpty ?? false) {
       existing.add(matchData['judgeId']?.toString() ?? '');
+    }
 
     final Set<String> selectedIds = Set.from(existing);
 
@@ -343,10 +345,11 @@ class _RoundViewState extends State<RoundView>
                   value: selected,
                   onChanged: (checked) {
                     setState(() {
-                      if (checked == true)
+                      if (checked == true) {
                         selectedIds.add(j['id'] ?? '');
-                      else
+                      } else {
                         selectedIds.remove(j['id'] ?? '');
+                      }
                     });
                   },
                 );
