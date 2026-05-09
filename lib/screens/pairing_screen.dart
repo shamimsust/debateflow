@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../services/match_service.dart';
-import '../services/round_service.dart'; // ✅ Imported your new service
+import '../services/round_service.dart';
 import 'ballot_screen.dart';
 
 class PairingScreen extends StatefulWidget {
@@ -28,18 +28,18 @@ class _PairingScreenState extends State<PairingScreen> {
         .ref('tournaments/${widget.tournamentId}')
         .onValue
         .listen((event) {
-          if (event.snapshot.exists) {
-            final dynamic rawValue = event.snapshot.value;
-            if (rawValue != null) {
-              final String prelimsStr = rawValue['prelims']?.toString() ?? '1';
-              if (mounted) {
-                setState(() {
-                  totalRounds = double.tryParse(prelimsStr)?.toInt() ?? 1;
-                });
-              }
-            }
+      if (event.snapshot.exists) {
+        final dynamic rawValue = event.snapshot.value;
+        if (rawValue != null) {
+          final String prelimsStr = rawValue['prelims']?.toString() ?? '1';
+          if (mounted) {
+            setState(() {
+              totalRounds = double.tryParse(prelimsStr)?.toInt() ?? 1;
+            });
           }
-        });
+        }
+      }
+    });
   }
 
   @override
@@ -72,7 +72,7 @@ class _PairingScreenState extends State<PairingScreen> {
               roundNumber: i + 1,
               isLastRound: (i + 1) == totalRounds,
               matchService: _matchService,
-              roundService: _roundService, // ✅ Pass service down
+              roundService: _roundService,
             );
           }),
         ),
@@ -108,7 +108,6 @@ class _RoundViewState extends State<RoundView>
   @override
   bool get wantKeepAlive => true;
 
-  // ✅ Step 1: Generate Matches + Set Round Status to 'Draft'
   Future<void> _handleGenerate() async {
     setState(() => _isProcessing = true);
     try {
@@ -124,7 +123,6 @@ class _RoundViewState extends State<RoundView>
         rule: rule,
       );
 
-      // Initialize status in your RoundService
       await widget.roundService.updateRoundStatus(
         widget.tournamentId,
         widget.roundNumber.toString(),
@@ -141,7 +139,6 @@ class _RoundViewState extends State<RoundView>
     final String roundKey = "round_${widget.roundNumber}";
 
     return StreamBuilder(
-      // Listen to Round Status and Matches simultaneously
       stream: FirebaseDatabase.instance.ref().onValue,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -234,22 +231,26 @@ class _RoundViewState extends State<RoundView>
         ? List<Map<String, dynamic>>.from(m['judges'])
         : [];
     final legacyJudge = (m['judge'] as String?)?.trim();
-    final judgesDisplay = judgeList.isNotEmpty
-        ? judgeList
-              .map((e) => e['name']?.toString() ?? '')
-              .where((n) => n.isNotEmpty)
-              .join(', ')
-        : (legacyJudge?.isNotEmpty ?? false ? legacyJudge! : 'TBD');
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: isCompleted ? Colors.green.shade200 : Colors.grey.shade300,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+        border: Border.all(
+          color: isCompleted ? Colors.green.shade200 : Colors.grey.shade200,
+          width: 1,
         ),
       ),
-      child: ListTile(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -260,32 +261,126 @@ class _RoundViewState extends State<RoundView>
             ),
           ),
         ),
-        title: isBP
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sideText("OG", m['sideOG']),
-                  _sideText("OO", m['sideOO']),
-                  _sideText("CG", m['sideCG']),
-                  _sideText("CO", m['sideCO']),
-                ],
-              )
-            : Text(
-                "${m['sideA']} vs ${m['sideB']}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-        subtitle: Text("${m['room'] ?? 'TBD'} | $judgesDisplay"),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Column(
           children: [
-            IconButton(
-              icon: const Icon(Icons.edit, size: 20),
-              tooltip: 'Assign adjudicators',
-              onPressed: () => _openJudgeAssignmentDialog(m),
+            // Header: Room and Completion Status
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.meeting_room_outlined, size: 14, color: Colors.blueGrey),
+                      const SizedBox(width: 4),
+                      Text(
+                        m['room']?.toString().toUpperCase() ?? "TBD",
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.blueGrey),
+                      ),
+                    ],
+                  ),
+                  if (isCompleted)
+                    const Icon(Icons.check_circle, color: Colors.green, size: 16)
+                  else
+                    const Text("PENDING", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.orange)),
+                ],
+              ),
             ),
-            Icon(
-              isCompleted ? Icons.check_circle : Icons.pending,
-              color: isCompleted ? Colors.green : Colors.orange,
+            // Body: Pairings
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: isBP ? _buildBPLayout(m) : _buildWSDCLayout(m),
+            ),
+            // Footer: Adjudicators
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFF2264D7)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      judgeList.isNotEmpty
+                          ? judgeList.map((e) => e['name']).join(', ')
+                          : (legacyJudge?.isNotEmpty ?? false ? legacyJudge! : 'No Adjudicator Assigned'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: (judgeList.isEmpty && (legacyJudge?.isEmpty ?? true)) ? Colors.red : Colors.black87,
+                        fontStyle: (judgeList.isEmpty && (legacyJudge?.isEmpty ?? true)) ? FontStyle.italic : FontStyle.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_note_rounded, size: 20, color: Colors.blueGrey),
+                    onPressed: () => _openJudgeAssignmentDialog(m),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWSDCLayout(Map m) {
+    return Row(
+      children: [
+        _teamBlock("GOV / PROP", m['sideA'] ?? "TBD", const Color(0xFFE0F2FE), const Color(0xFF0369A1)),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text("vs", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+        ),
+        _teamBlock("OPP / NEG", m['sideB'] ?? "TBD", const Color(0xFFFEF2F2), const Color(0xFFB91C1C)),
+      ],
+    );
+  }
+
+  Widget _buildBPLayout(Map m) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            _teamBlock("OG", m['sideOG'] ?? "TBD", const Color(0xFFECFDF5), const Color(0xFF047857)),
+            const SizedBox(width: 8),
+            _teamBlock("OO", m['sideOO'] ?? "TBD", const Color(0xFFFFF7ED), const Color(0xFFC2410C)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _teamBlock("CG", m['sideCG'] ?? "TBD", const Color(0xFFF5F3FF), const Color(0xFF6D28D9)),
+            const SizedBox(width: 8),
+            _teamBlock("CO", m['sideCO'] ?? "TBD", const Color(0xFFFDF2F8), const Color(0xFFBE185D)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _teamBlock(String side, String name, Color bgColor, Color textColor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(8)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(side, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: textColor.withValues(alpha: 0.6))),
+            const SizedBox(height: 2),
+            Text(
+              name,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -318,13 +413,14 @@ class _RoundViewState extends State<RoundView>
     }
 
     final existing = (matchData['judges'] is List)
-        ? List<Map<String, dynamic>>.from(
-            matchData['judges'],
-          ).map((e) => e['id']?.toString()).whereType<String>().toSet()
+        ? List<Map<String, dynamic>>.from(matchData['judges'])
+            .map((e) => e['id']?.toString())
+            .whereType<String>()
+            .toSet()
         : <String>{};
 
-    if ((matchData['judge'] as String?)?.isNotEmpty ?? false) {
-      existing.add(matchData['judgeId']?.toString() ?? '');
+    if ((matchData['judgeId'] as String?)?.isNotEmpty ?? false) {
+      existing.add(matchData['judgeId']!.toString());
     }
 
     final Set<String> selectedIds = Set.from(existing);
@@ -332,8 +428,8 @@ class _RoundViewState extends State<RoundView>
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Assign Adjudicators'),
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Assign Panel'),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView(
@@ -344,7 +440,7 @@ class _RoundViewState extends State<RoundView>
                   title: Text(j['name'] ?? 'TBD'),
                   value: selected,
                   onChanged: (checked) {
-                    setState(() {
+                    setLocalState(() {
                       if (checked == true) {
                         selectedIds.add(j['id'] ?? '');
                       } else {
@@ -357,10 +453,7 @@ class _RoundViewState extends State<RoundView>
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('CANCEL'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
             TextButton(
               onPressed: () async {
                 final assigned = allJudges
@@ -372,10 +465,7 @@ class _RoundViewState extends State<RoundView>
                   matchId: matchData['id'],
                   adjudicators: assigned,
                 );
-                if (mounted) {
-                  Navigator.pop(context);
-                  setState(() {});
-                }
+                if (mounted) Navigator.pop(context);
               },
               child: const Text('SAVE'),
             ),
@@ -384,11 +474,6 @@ class _RoundViewState extends State<RoundView>
       ),
     );
   }
-
-  Widget _sideText(String side, String? name) => Text(
-    "$side: ${name ?? 'TBD'}",
-    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-  );
 
   Widget _buildAdvanceButton() {
     return Container(
@@ -399,6 +484,7 @@ class _RoundViewState extends State<RoundView>
           backgroundColor: Colors.deepPurple,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: () =>
             widget.roundService.advanceToNextRound(widget.tournamentId),
@@ -417,14 +503,13 @@ class _RoundViewState extends State<RoundView>
           : Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.analytics_outlined,
-                  size: 64,
-                  color: Colors.grey,
-                ),
+                Icon(Icons.analytics_outlined, size: 64, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                const Text("No pairings found for this round", style: TextStyle(color: Colors.grey)),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _handleGenerate,
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7), foregroundColor: Colors.white),
                   child: const Text("GENERATE PAIRINGS"),
                 ),
               ],

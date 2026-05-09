@@ -12,77 +12,89 @@ class AddTeamScreen extends StatefulWidget {
 class _AddTeamScreenState extends State<AddTeamScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _s1Controller = TextEditingController();
-  final _s2Controller = TextEditingController();
-  final _s3Controller = TextEditingController();
+  final _bulkSpeakerController = TextEditingController();
   
-  String? _selectedTeamId; 
-  bool _isIronman = false;
-  bool _isLoading = false;
-  String _tournamentRule = "WSDC"; 
+  List<TextEditingController> _speakerControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadTournamentRule();
-  }
+  String? _selectedTeamId;
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _nameController.dispose();
-    _s1Controller.dispose();
-    _s2Controller.dispose();
-    _s3Controller.dispose();
+    _bulkSpeakerController.dispose();
+    for (var c in _speakerControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _loadTournamentRule() async {
-    final snap = await FirebaseDatabase.instance.ref('tournaments/${widget.tournamentId}/rule').get();
-    if (snap.exists && mounted) {
+  // --- Speaker Management ---
+
+  void _addSpeakerField([String initialValue = ""]) {
+    setState(() {
+      _speakerControllers.add(TextEditingController(text: initialValue));
+    });
+  }
+
+  void _removeSpeakerField(int index) {
+    if (_speakerControllers.length > 1) {
       setState(() {
-        _tournamentRule = snap.value.toString();
+        _speakerControllers[index].dispose();
+        _speakerControllers.removeAt(index);
       });
     }
   }
 
-  // ✅ New: Delete Team Logic
-  Future<void> _deleteTeam() async {
-    if (_selectedTeamId == null) return;
-
-    bool confirm = await showDialog(
+  // ✅ NEW: Bulk Import from Newlines
+  void _showBulkImportDialog() {
+    showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Delete Team?"),
-        content: Text("Are you sure you want to remove ${_nameController.text}?"),
+        title: const Text("Bulk Add Speakers"),
+        content: TextField(
+          controller: _bulkSpeakerController,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            hintText: "Enter names (one per line)\ne.g.\nJohn Doe\nJane Smith",
+            border: OutlineInputBorder(),
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
+          ElevatedButton(
+            onPressed: () {
+              final names = _bulkSpeakerController.text
+                  .split('\n')
+                  .where((s) => s.trim().isNotEmpty)
+                  .toList();
+              
+              if (names.isNotEmpty) {
+                setState(() {
+                  // If current fields are empty, clear them first
+                  if (_speakerControllers.length == 1 && _speakerControllers[0].text.isEmpty) {
+                    _speakerControllers.clear();
+                  }
+                  for (var name in names) {
+                    _speakerControllers.add(TextEditingController(text: name.trim()));
+                  }
+                });
+                _bulkSpeakerController.clear();
+              }
+              Navigator.pop(context);
+            },
+            child: const Text("IMPORT"),
+          ),
         ],
       ),
-    ) ?? false;
-
-    if (confirm) {
-      setState(() => _isLoading = true);
-      await FirebaseDatabase.instance.ref('teams/${widget.tournamentId}/$_selectedTeamId').remove();
-      _clearForm();
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Team deleted successfully")));
-      }
-    }
+    );
   }
 
-  void _clearForm() {
-    setState(() {
-      _selectedTeamId = null;
-      _isIronman = false;
-      _nameController.clear();
-      _s1Controller.clear();
-      _s2Controller.clear();
-      _s3Controller.clear();
-    });
-    _formKey.currentState?.reset();
-  }
+  // --- Database Operations ---
 
   Future<void> _saveTeam() async {
     if (!_formKey.currentState!.validate()) return;
@@ -94,20 +106,23 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
           ? db.child('teams/${widget.tournamentId}/$_selectedTeamId')
           : db.child('teams/${widget.tournamentId}').push();
 
+      List<String> speakerNames = _speakerControllers
+          .map((c) => c.text.trim())
+          .where((name) => name.isNotEmpty)
+          .toList();
+
       await teamRef.update({
         'name': _nameController.text.trim(),
-        'speaker1': _s1Controller.text.trim(),
-        'speaker2': _s2Controller.text.trim(),
-        'speaker3': (_tournamentRule == "BP" || _isIronman) ? "" : _s3Controller.text.trim(),
-        'isIronman': _isIronman,
-        'wins': 0.0, // Initialize/Reset stats if new
-        'totalMarks': 0.0,
+        'speakers': speakerNames,
         'lastUpdated': ServerValue.timestamp,
+        // Keep these for standings logic
+        'wins': 0.0,
+        'totalMarks': 0.0,
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("${_nameController.text.trim()} saved!"), backgroundColor: Colors.green),
+          const SnackBar(content: Text("Team saved successfully!"), backgroundColor: Colors.green),
         );
         _clearForm();
       }
@@ -118,25 +133,25 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
     }
   }
 
+  void _clearForm() {
+    setState(() {
+      _selectedTeamId = null;
+      _nameController.clear();
+      for (var c in _speakerControllers) {
+        c.dispose();
+      }
+      _speakerControllers = [TextEditingController(), TextEditingController(), TextEditingController()];
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final teamsQuery = FirebaseDatabase.instance.ref('teams/${widget.tournamentId}');
-    bool isBP = _tournamentRule == "BP";
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(isBP ? "Add Teams (BP)" : "Add Teams"),
+        title: const Text("Team Roster"),
         backgroundColor: const Color(0xFF2264D7),
         foregroundColor: Colors.white,
-        actions: [
-          if (_selectedTeamId != null)
-            IconButton(icon: const Icon(Icons.delete_outline), onPressed: _deleteTeam),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("DONE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          )
-        ],
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
@@ -147,92 +162,61 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle("Quick Select / Edit Existing"),
-                  const SizedBox(height: 10),
-                  
-                  StreamBuilder(
-                    stream: teamsQuery.onValue,
-                    builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-                      if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                        return const Text("No teams registered yet.");
-                      }
-                      
-                      Map teams = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
-                      
-                      // 🛠️ THE FIX: Check if ID still exists in the list to avoid Null Value error
-                      String? safeVal = teams.containsKey(_selectedTeamId) ? _selectedTeamId : null;
-
-                      return DropdownButtonFormField<String>(
-                        key: UniqueKey(), // 🛠️ Fix: Force rebuild to prevent state conflicts
-                        initialValue: safeVal,
-                        decoration: _inputStyle("Choose Team to Edit"),
-                        items: teams.entries.map((e) => DropdownMenuItem<String>(
-                          value: e.key.toString(),
-                          child: Text(e.value['name'] ?? "Unnamed"),
-                        )).toList(),
-                        onChanged: (val) {
-                          if (val == null) return;
-                          setState(() {
-                            _selectedTeamId = val;
-                            var t = teams[val];
-                            _nameController.text = t['name']?.toString() ?? "";
-                            _s1Controller.text = t['speaker1']?.toString() ?? "";
-                            _s2Controller.text = t['speaker2']?.toString() ?? "";
-                            _s3Controller.text = t['speaker3']?.toString() ?? "";
-                            _isIronman = t['isIronman'] ?? false;
-                          });
-                        },
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 25),
-                  _buildSectionTitle("Team Identity"),
+                  _buildSectionTitle("Team Name"),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _nameController,
-                    decoration: _inputStyle("Team Name"),
-                    validator: (v) => v!.isEmpty ? "Enter team name" : null,
+                    decoration: _inputStyle("Team Name (e.g. Harvard A)"),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
                   ),
                   
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 30),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildSectionTitle("Speakers"),
-                      if (!isBP)
-                        Row(
-                          children: [
-                            const Text("Ironman", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            Switch(
-                              value: _isIronman,
-                              onChanged: (val) => setState(() => _isIronman = val),
-                            ),
-                          ],
-                        ),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: _showBulkImportDialog,
+                            icon: const Icon(Icons.list_alt_rounded),
+                            label: const Text("Bulk"),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => _addSpeakerField(),
+                            icon: const Icon(Icons.add),
+                            label: const Text("Add"),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
+                  const SizedBox(height: 10),
                   
-                  TextFormField(
-                    controller: _s1Controller,
-                    decoration: _inputStyle("Speaker 1"),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _speakerControllers.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _speakerControllers[index],
+                              decoration: _inputStyle("Speaker Name"),
+                              validator: (v) => index < 2 && v!.isEmpty ? "Required" : null,
+                            ),
+                          ),
+                          if (_speakerControllers.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
+                              onPressed: () => _removeSpeakerField(index),
+                            ),
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 15),
-                  TextFormField(
-                    controller: _s2Controller,
-                    decoration: _inputStyle("Speaker 2"),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
-                  
-                  if (!isBP && !_isIronman) ...[
-                    const SizedBox(height: 15),
-                    TextFormField(
-                      controller: _s3Controller,
-                      decoration: _inputStyle("Speaker 3"),
-                      validator: (v) => v!.isEmpty ? "Required" : null,
-                    ),
-                  ],
 
                   const SizedBox(height: 40),
                   SizedBox(
@@ -245,19 +229,9 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: Text(_selectedTeamId == null ? "SAVE & ADD NEXT" : "UPDATE TEAM"),
+                      child: Text(_selectedTeamId == null ? "SAVE TEAM" : "UPDATE TEAM"),
                     ),
                   ),
-                  if(_selectedTeamId != null)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 10.0),
-                        child: TextButton(
-                          onPressed: _clearForm,
-                          child: const Text("Clear and Add New instead"),
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -265,19 +239,15 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
     );
   }
 
-  InputDecoration _inputStyle(String label) {
-    return InputDecoration(
-      labelText: label,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: Colors.white,
-    );
-  }
+  InputDecoration _inputStyle(String label) => InputDecoration(
+    labelText: label,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    filled: true,
+    fillColor: Colors.white,
+  );
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.blueGrey, letterSpacing: 1.2),
-    );
-  }
+  Widget _buildSectionTitle(String title) => Text(
+    title.toUpperCase(),
+    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.blueGrey, letterSpacing: 1.2),
+  );
 }
