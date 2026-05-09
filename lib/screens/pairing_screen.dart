@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Required for Clipboard
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart'; // Required for kIsWeb
 import '../services/match_service.dart';
 import '../services/round_service.dart';
 import 'ballot_screen.dart';
@@ -42,6 +44,22 @@ class _PairingScreenState extends State<PairingScreen> {
     });
   }
 
+  // ✅ Added Share Functionality
+  void _sharePairingLink() {
+    final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
+    final String shareUrl = "$baseUrl/pairings/${widget.tournamentId}";
+    
+    Clipboard.setData(ClipboardData(text: shareUrl));
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Public Pairing Link Copied:\n$shareUrl"),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -56,6 +74,15 @@ class _PairingScreenState extends State<PairingScreen> {
           ),
           backgroundColor: const Color(0xFF2264D7),
           foregroundColor: Colors.white,
+          // ✅ Added Share Button to Actions
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.share_rounded),
+              tooltip: "Share Public Pairings",
+              onPressed: _sharePairingLink,
+            ),
+            const SizedBox(width: 8),
+          ],
           bottom: TabBar(
             isScrollable: totalRounds > 4,
             indicatorColor: Colors.white,
@@ -160,7 +187,6 @@ class _RoundViewState extends State<RoundView>
             final dynamic matchData = matchSnapshot.data?.snapshot.value;
             if (matchData == null || matchData is! Map) return _buildEmptyState();
 
-            // ✅ FIX: Use Map.from() to avoid the TypeError
             final Map<dynamic, dynamic> matchMap = matchData;
             List matches = [];
             matchMap.forEach((key, val) {

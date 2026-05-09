@@ -127,7 +127,6 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
   void _sharePublicLink() {
     final String baseUrl = kIsWeb ? Uri.base.origin : "https://debateflow-2026.web.app";
     final String shareUrl = "$baseUrl/results/${widget.tournamentId}";
-    debugPrint('sharePublicLink $shareUrl');
     Clipboard.setData(ClipboardData(text: shareUrl));
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text("Link copied:\n$shareUrl"),
@@ -154,10 +153,13 @@ class _PublicResultsScreenState extends State<PublicResultsScreen> {
       body: StreamBuilder(
         stream: ballotsRef.onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
           if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("Waiting for ballots..."));
+          
           Map data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
           List<MapEntry> ballotList = data.entries.toList();
           ballotList.sort((a, b) => (b.value['round'] ?? 0).compareTo(a.value['round'] ?? 0));
+          
           return ListView.builder(
             padding: const EdgeInsets.all(12),
             itemCount: ballotList.length,
@@ -208,43 +210,52 @@ class _TeamRankingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX: Listen specifically to the tournament and team nodes
     return StreamBuilder(
-      stream: FirebaseDatabase.instance.ref().onValue,
-      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final db = snapshot.data!.snapshot.value as Map?;
-        final teamData = db?['teams']?[tournamentId] as Map?;
-        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+      stream: FirebaseDatabase.instance.ref('tournaments/$tournamentId').onValue,
+      builder: (context, AsyncSnapshot<DatabaseEvent> tourneySnap) {
+        if (!tourneySnap.hasData) return const Center(child: CircularProgressIndicator());
+        
+        final tourneyData = tourneySnap.data!.snapshot.value as Map?;
         final String rule = tourneyData?['rule'] ?? "WSDC";
 
-        if (teamData == null) return const Center(child: Text("No teams found."));
+        return StreamBuilder(
+          stream: FirebaseDatabase.instance.ref('teams/$tournamentId').onValue,
+          builder: (context, AsyncSnapshot<DatabaseEvent> teamSnap) {
+            if (!teamSnap.hasData) return const Center(child: CircularProgressIndicator());
+            
+            final teamData = teamSnap.data!.snapshot.value as Map?;
+            if (teamData == null) return const Center(child: Text("No teams found."));
 
-        List<TeamStanding> teams = [];
-        teamData.forEach((key, value) {
-          if (value['name'].toString().toLowerCase().contains(query)) {
-            teams.add(TeamStanding(
-              id: key,
-              teamName: value['name'] ?? "Team",
-              wins: (value['wins'] ?? 0).toDouble(),
-              totalMarks: (value['totalMarks'] ?? 0).toDouble(),
-            ));
-          }
-        });
+            List<TeamStanding> teams = [];
+            teamData.forEach((key, value) {
+              final String name = value['name']?.toString() ?? "Team";
+              if (name.toLowerCase().contains(query)) {
+                teams.add(TeamStanding(
+                  id: key,
+                  teamName: name,
+                  wins: (value['wins'] ?? 0).toDouble(),
+                  totalMarks: (value['totalMarks'] ?? 0).toDouble(),
+                ));
+              }
+            });
 
-        teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
+            teams.sort((a, b) => b.wins != a.wins ? b.wins.compareTo(a.wins) : b.totalMarks.compareTo(a.totalMarks));
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: teams.length,
-          itemBuilder: (context, index) => _RankingCard(
-            index: index, 
-            title: teams[index].teamName, 
-            subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
-            trailingValue: teams[index].wins.toStringAsFixed(0), 
-            trailingLabel: rule == "BP" ? "POINTS" : "WINS", 
-            isTeam: true,
-            onTap: () => _showTeamDetails(context, tournamentId, teams[index]),
-          ),
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: teams.length,
+              itemBuilder: (context, index) => _RankingCard(
+                index: index, 
+                title: teams[index].teamName, 
+                subtitle: "Total Marks: ${teams[index].totalMarks.toStringAsFixed(1)}",
+                trailingValue: teams[index].wins.toStringAsFixed(0), 
+                trailingLabel: rule == "BP" ? "POINTS" : "WINS", 
+                isTeam: true,
+                onTap: () => _showTeamDetails(context, tournamentId, teams[index]),
+              ),
+            );
+          },
         );
       },
     );
@@ -268,63 +279,74 @@ class _SpeakerRankingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX: Target specific tournament and ballots nodes
     return StreamBuilder(
-      stream: FirebaseDatabase.instance.ref().onValue,
-      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
-        final db = snapshot.data!.snapshot.value as Map?;
-        final tourneyData = db?['tournaments']?[tournamentId] as Map?;
+      stream: FirebaseDatabase.instance.ref('tournaments/$tournamentId').onValue,
+      builder: (context, AsyncSnapshot<DatabaseEvent> tourneySnap) {
+        if (!tourneySnap.hasData) return const Center(child: CircularProgressIndicator());
+        final tourneyData = tourneySnap.data!.snapshot.value as Map?;
         final String rule = tourneyData?['rule'] ?? "WSDC";
-        final Map ballots = Map<dynamic, dynamic>.from(db?['ballots']?[tournamentId] ?? {});
 
-        Map<String, List<_MatchPerformance>> speakerPerformances = {};
+        return StreamBuilder(
+          stream: FirebaseDatabase.instance.ref('ballots/$tournamentId').onValue,
+          builder: (context, AsyncSnapshot<DatabaseEvent> ballotSnap) {
+            if (!ballotSnap.hasData) return const Center(child: CircularProgressIndicator());
+            
+            final ballotData = ballotSnap.data!.snapshot.value as Map?;
+            if (ballotData == null) return const Center(child: Text("No ballots recorded yet."));
 
-        ballots.forEach((mId, bData) {
-          if (bData['results'] != null) {
-            Map res = Map<dynamic, dynamic>.from(bData['results'] as Map);
-            res.forEach((tId, tData) {
-              String teamName = tData['teamName'] ?? "Unknown";
-              List speakers = tData['speakers'] ?? tData['speeches'] ?? [];
-              for (var s in speakers) {
-                String name = s['name'] ?? s['speakerName'] ?? "Unknown";
-                double score = (s['score'] ?? 0).toDouble();
-                int rank = (s['rank'] ?? 0).toInt();
-                if (name != "Unknown" && score > 0) {
-                  String key = "$name-$teamName";
-                  speakerPerformances.putIfAbsent(key, () => []).add(
-                    _MatchPerformance(round: bData['round'] ?? 0, name: name, team: teamName, score: score, rank: rank)
-                  );
-                }
+            Map<String, List<_MatchPerformance>> speakerPerformances = {};
+
+            ballotData.forEach((mId, bData) {
+              if (bData['results'] != null) {
+                Map res = Map<dynamic, dynamic>.from(bData['results'] as Map);
+                res.forEach((tId, tData) {
+                  String teamName = tData['teamName'] ?? "Unknown";
+                  List speakers = tData['speakers'] ?? tData['speeches'] ?? [];
+                  for (var s in speakers) {
+                    String name = s['name'] ?? s['speakerName'] ?? "Unknown";
+                    double score = (s['score'] ?? 0).toDouble();
+                    int rank = (s['rank'] ?? 0).toInt();
+                    if (name != "Unknown" && score > 0) {
+                      String key = "$name-$teamName";
+                      speakerPerformances.putIfAbsent(key, () => []).add(
+                        _MatchPerformance(round: bData['round'] ?? 0, name: name, team: teamName, score: score, rank: rank)
+                      );
+                    }
+                  }
+                });
               }
             });
-          }
-        });
 
-        List<SpeakerStanding> speakers = speakerPerformances.entries.map((e) {
-          return SpeakerStanding(
-            speakerName: e.value.first.name,
-            teamName: e.value.first.team,
-            totalSubstantivePoints: e.value.fold(0.0, (sum, m) => sum + m.score),
-            totalRank: e.value.fold(0, (sum, m) => sum + m.rank),
-            matchesPlayed: e.value.length,
-          );
-        }).where((s) => s.speakerName.toLowerCase().contains(query)).toList();
+            List<SpeakerStanding> speakers = speakerPerformances.entries.map((e) {
+              return SpeakerStanding(
+                speakerName: e.value.first.name,
+                teamName: e.value.first.team,
+                totalSubstantivePoints: e.value.fold(0.0, (sum, m) => sum + m.score),
+                totalRank: e.value.fold(0, (sum, m) => sum + m.rank),
+                matchesPlayed: e.value.length,
+              );
+            }).where((s) => s.speakerName.toLowerCase().contains(query)).toList();
 
-        speakers.sort((a, b) => rule == "BP" ? a.averageRank.compareTo(b.averageRank) : b.averageScore.compareTo(a.averageScore));
+            // Sort logic: BP uses lowest Average Rank, others use highest Average Score
+            speakers.sort((a, b) => rule == "BP" 
+              ? a.averageRank.compareTo(b.averageRank) 
+              : b.averageScore.compareTo(a.averageScore));
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: speakers.length,
-          itemBuilder: (context, index) => _RankingCard(
-            index: index, 
-            title: speakers[index].speakerName, 
-            subtitle: speakers[index].teamName,
-            trailingValue: speakers[index].averageScore.toStringAsFixed(2), 
-            trailingLabel: rule == "BP" ? "AVG RNK" : "AVG", 
-            isTeam: false,
-            onTap: () => _showSpeakerDetails(context, tournamentId, speakers[index]),
-          ),
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: speakers.length,
+              itemBuilder: (context, index) => _RankingCard(
+                index: index, 
+                title: speakers[index].speakerName, 
+                subtitle: speakers[index].teamName,
+                trailingValue: rule == "BP" ? speakers[index].averageRank.toStringAsFixed(2) : speakers[index].averageScore.toStringAsFixed(2), 
+                trailingLabel: rule == "BP" ? "AVG RNK" : "AVG", 
+                isTeam: false,
+                onTap: () => _showSpeakerDetails(context, tournamentId, speakers[index]),
+              ),
+            );
+          },
         );
       },
     );
@@ -362,7 +384,9 @@ class _DetailsSheet extends StatelessWidget {
             child: StreamBuilder(
               stream: FirebaseDatabase.instance.ref('ballots/$tid').onValue,
               builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                 if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const Center(child: Text("No match history."));
+                
                 Map ballots = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
                 List<_MatchPerformance> history = [];
 
@@ -419,7 +443,11 @@ class _RankingCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]),
+        decoration: BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.circular(15), 
+          boxShadow: [BoxShadow(color: Colors.black.withOpacityValue(0.03), blurRadius: 10)]
+        ),
         child: ListTile(
           leading: CircleAvatar(
             backgroundColor: isTop ? const Color(0xFF2264D7) : Colors.grey.shade100,
