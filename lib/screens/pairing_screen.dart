@@ -389,6 +389,7 @@ class _RoundViewState extends State<RoundView>
   }
 
   Future<void> _openJudgeAssignmentDialog(Map matchData) async {
+    if (!context.mounted) return;
     final judgesSnap = await FirebaseDatabase.instance
         .ref('adjudicators/${widget.tournamentId}')
         .get();
@@ -404,11 +405,10 @@ class _RoundViewState extends State<RoundView>
     }
 
     if (allJudges.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No judges found in tournament setup.')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No judges found in tournament setup.')),
+      );
       return;
     }
 
@@ -425,6 +425,7 @@ class _RoundViewState extends State<RoundView>
 
     final Set<String> selectedIds = Set.from(existing);
 
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -465,7 +466,7 @@ class _RoundViewState extends State<RoundView>
                   matchId: matchData['id'],
                   adjudicators: assigned,
                 );
-                if (mounted) Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('SAVE'),
             ),
