@@ -30,7 +30,7 @@ class _PairingScreenState extends State<PairingScreen> {
         .listen((event) {
       if (event.snapshot.exists) {
         final dynamic rawValue = event.snapshot.value;
-        if (rawValue != null) {
+        if (rawValue != null && rawValue is Map) {
           final String prelimsStr = rawValue['prelims']?.toString() ?? '1';
           if (mounted) {
             setState(() {
@@ -115,7 +115,7 @@ class _RoundViewState extends State<RoundView>
           .ref('tournaments/${widget.tournamentId}')
           .get();
       final dynamic tourneyData = tourneySnap.value;
-      String rule = tourneyData['rule'] ?? "WSDC";
+      String rule = (tourneyData is Map) ? (tourneyData['rule'] ?? "WSDC") : "WSDC";
 
       await widget.matchService.generateMatches(
         tournamentId: widget.tournamentId,
@@ -139,42 +139,52 @@ class _RoundViewState extends State<RoundView>
     final String roundKey = "round_${widget.roundNumber}";
 
     return StreamBuilder(
-      stream: FirebaseDatabase.instance.ref().onValue,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+      stream: FirebaseDatabase.instance.ref('tournaments/${widget.tournamentId}').onValue,
+      builder: (context, tournamentSnapshot) {
+        if (!tournamentSnapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final dbData = snapshot.data!.snapshot.value as Map?;
-        final roundSettings =
-            dbData?['tournaments']?[widget.tournamentId]?['rounds']?[roundKey];
+        final dynamic tourneyData = tournamentSnapshot.data!.snapshot.value;
+        final Map? tourneyMap = tourneyData is Map ? tourneyData : null;
+        final roundSettings = tourneyMap?['rounds']?[roundKey];
         final String status = roundSettings?['status'] ?? "Not Generated";
 
-        final matchData =
-            dbData?['matches']?[widget.tournamentId]?[roundKey] as Map?;
-        if (matchData == null) return _buildEmptyState();
+        return StreamBuilder(
+          stream: FirebaseDatabase.instance.ref('matches/${widget.tournamentId}/$roundKey').onValue,
+          builder: (context, matchSnapshot) {
+            if (matchSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        List matches = [];
-        matchData.forEach(
-          (key, val) =>
-              matches.add({"id": key, ...Map<String, dynamic>.from(val)}),
-        );
+            final dynamic matchData = matchSnapshot.data?.snapshot.value;
+            if (matchData == null || matchData is! Map) return _buildEmptyState();
 
-        bool allFinished = matches.every((m) => m['status'] == 'Completed');
+            // ✅ FIX: Use Map.from() to avoid the TypeError
+            final Map<dynamic, dynamic> matchMap = matchData;
+            List matches = [];
+            matchMap.forEach((key, val) {
+              if (val is Map) {
+                matches.add({"id": key, ...Map<String, dynamic>.from(val)});
+              }
+            });
 
-        return Column(
-          children: [
-            _buildRoundHeader(status, matches.length, allFinished),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: matches.length,
-                itemBuilder: (context, index) =>
-                    _buildMatchCard(matches[index]),
-              ),
-            ),
-            if (widget.isLastRound && allFinished) _buildAdvanceButton(),
-          ],
+            bool allFinished = matches.isNotEmpty && matches.every((m) => m['status'] == 'Completed');
+
+            return Column(
+              children: [
+                _buildRoundHeader(status, matches.length, allFinished),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: matches.length,
+                    itemBuilder: (context, index) => _buildMatchCard(matches[index]),
+                  ),
+                ),
+                if (widget.isLastRound && allFinished) _buildAdvanceButton(),
+              ],
+            );
+          },
         );
       },
     );
@@ -195,9 +205,7 @@ class _RoundViewState extends State<RoundView>
                 "Status: ${status.toUpperCase()}",
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: isReleased
-                      ? Colors.green.shade700
-                      : Colors.blue.shade700,
+                  color: isReleased ? Colors.green.shade700 : Colors.blue.shade700,
                 ),
               ),
               Text(
@@ -227,9 +235,7 @@ class _RoundViewState extends State<RoundView>
     bool isBP = m['rule'] == "BP";
     bool isCompleted = m['status'] == 'Completed';
 
-    final judgeList = (m['judges'] is List)
-        ? List<Map<String, dynamic>>.from(m['judges'])
-        : [];
+    final List judgeList = m['judges'] is List ? m['judges'] : [];
     final legacyJudge = (m['judge'] as String?)?.trim();
 
     return Container(
@@ -239,7 +245,7 @@ class _RoundViewState extends State<RoundView>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           )
@@ -263,12 +269,11 @@ class _RoundViewState extends State<RoundView>
         ),
         child: Column(
           children: [
-            // Header: Room and Completion Status
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: const BorderRadius.only(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(12), topRight: Radius.circular(12)),
               ),
               child: Row(
@@ -291,12 +296,10 @@ class _RoundViewState extends State<RoundView>
                 ],
               ),
             ),
-            // Body: Pairings
             Padding(
               padding: const EdgeInsets.all(12),
               child: isBP ? _buildBPLayout(m) : _buildWSDCLayout(m),
             ),
-            // Footer: Adjudicators
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -307,7 +310,7 @@ class _RoundViewState extends State<RoundView>
                   Expanded(
                     child: Text(
                       judgeList.isNotEmpty
-                          ? judgeList.map((e) => e['name']).join(', ')
+                          ? judgeList.map((e) => (e is Map ? e['name'] : e.toString())).join(', ')
                           : (legacyJudge?.isNotEmpty ?? false ? legacyJudge! : 'No Adjudicator Assigned'),
                       style: TextStyle(
                         fontSize: 12,
@@ -374,7 +377,7 @@ class _RoundViewState extends State<RoundView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(side, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: textColor.withValues(alpha: 0.6))),
+            Text(side, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: textColor.withOpacity(0.6))),
             const SizedBox(height: 2),
             Text(
               name,
@@ -393,14 +396,17 @@ class _RoundViewState extends State<RoundView>
     final judgesSnap = await FirebaseDatabase.instance
         .ref('adjudicators/${widget.tournamentId}')
         .get();
+    
     List<Map<String, String>> allJudges = [];
-    for (var child in judgesSnap.children) {
-      final dynamic j = child.value;
-      if (j != null) {
-        allJudges.add({
-          'id': child.key ?? '',
-          'name': j['name']?.toString() ?? 'TBD',
-        });
+    if (judgesSnap.exists) {
+      for (var child in judgesSnap.children) {
+        final dynamic j = child.value;
+        if (j != null && j is Map) {
+          allJudges.add({
+            'id': child.key ?? '',
+            'name': j['name']?.toString() ?? 'TBD',
+          });
+        }
       }
     }
 
@@ -413,15 +419,11 @@ class _RoundViewState extends State<RoundView>
     }
 
     final existing = (matchData['judges'] is List)
-        ? List<Map<String, dynamic>>.from(matchData['judges'])
-            .map((e) => e['id']?.toString())
+        ? (matchData['judges'] as List)
+            .map((e) => e is Map ? e['id']?.toString() : e.toString())
             .whereType<String>()
             .toSet()
         : <String>{};
-
-    if ((matchData['judgeId'] as String?)?.isNotEmpty ?? false) {
-      existing.add(matchData['judgeId']!.toString());
-    }
 
     final Set<String> selectedIds = Set.from(existing);
 
@@ -487,8 +489,7 @@ class _RoundViewState extends State<RoundView>
           padding: const EdgeInsets.all(16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        onPressed: () =>
-            widget.roundService.advanceToNextRound(widget.tournamentId),
+        onPressed: () => widget.roundService.advanceToNextRound(widget.tournamentId),
         child: const Text(
           "ADVANCE TO NEXT ROUND",
           style: TextStyle(fontWeight: FontWeight.bold),
