@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../services/debate_validator.dart'; // ✅ Uses your abstract/factory service
+import '../services/debate_validator.dart';
 
 class BallotScreen extends StatefulWidget {
   final String tournamentId;
@@ -63,7 +63,7 @@ class _BallotScreenState extends State<BallotScreen> {
           .ref('tournaments/${widget.tournamentId}/settings').get();
       
       if (settingsSnap.exists) {
-        final s = Map<dynamic, dynamic>.from(settingsSnap.value as Map);
+        final s = Map<String, dynamic>.from(settingsSnap.value as Map);
         validatorSettings['minSub'] = (s['minSubstantive'] ?? 60.0).toDouble();
         validatorSettings['maxSub'] = (s['maxSubstantive'] ?? 80.0).toDouble();
         validatorSettings['minReply'] = (s['minReply'] ?? 30.0).toDouble();
@@ -75,10 +75,11 @@ class _BallotScreenState extends State<BallotScreen> {
           ? ["sideOG", "sideOO", "sideCG", "sideCO"] 
           : ["sideA", "sideB"];
 
-      // 3. Setup Controllers & Fetch Speakers
+      // 3. Setup Controllers & Fetch Speaker Lists (FIXED)
       for (var key in sideKeys) {
-        String? teamName = widget.matchData[key];
-        String? teamId = widget.matchData['${key}Id'];
+        final data = Map<String, dynamic>.from(widget.matchData);
+        String? teamName = data[key]?.toString();
+        String? teamId = data['${key}Id']?.toString();
         
         if (teamName != null && teamId != null) {
           _teamIdMap[teamName] = teamId;
@@ -89,16 +90,52 @@ class _BallotScreenState extends State<BallotScreen> {
           _scoreMap[teamName] = List.generate(speechCount, (_) => TextEditingController());
           _selectedSpeakers[teamName] = List.generate(speechCount, (_) => null);
 
+          // Fetch team data from teams node
           final teamSnap = await FirebaseDatabase.instance
               .ref('teams/${widget.tournamentId}/$teamId').get();
           
           if (teamSnap.exists) {
-            Map data = teamSnap.value as Map;
-            _speakerNames[teamName] = [data['speaker1'], data['speaker2'], data['speaker3']]
-                .whereType<String>().toList();
+            Map tData = Map<String, dynamic>.from(teamSnap.value as Map);
+            
+            // ✅ FIX: Access the 'speakers' list saved by AddTeamScreen
+            if (tData['speakers'] != null && tData['speakers'] is List) {
+              _speakerNames[teamName] = List<String>.from(tData['speakers']);
+            } else {
+              _speakerNames[teamName] = [];
+            }
           }
         }
       }
+
+      // 4. Fetch Existing Ballot Data for Editing
+      final ballotSnap = await FirebaseDatabase.instance
+          .ref('ballots/${widget.tournamentId}/${widget.matchId}').get();
+
+      if (ballotSnap.exists) {
+        final bData = Map<String, dynamic>.from(ballotSnap.value as Map);
+        final results = Map<String, dynamic>.from(bData['results'] as Map);
+
+        results.forEach((tId, val) {
+          final teamResult = Map<String, dynamic>.from(val as Map);
+          final String? teamName = teamResult['teamName'];
+          
+          if (teamName != null && _scoreMap.containsKey(teamName)) {
+            final List speeches = teamResult['speeches'] as List;
+            _isIronmanMap[teamName] = teamResult['isIronman'] ?? false;
+            
+            for (int i = 0; i < speeches.length; i++) {
+              if (i < _scoreMap[teamName]!.length) {
+                final s = Map<String, dynamic>.from(speeches[i] as Map);
+                _scoreMap[teamName]![i].text = s['score'].toString();
+                _selectedSpeakers[teamName]![i] = s['speakerName']?.toString();
+              }
+            }
+          }
+        });
+        _calculateAutoRanks();
+      }
+    } catch (e) {
+      debugPrint("Initialization Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -119,7 +156,6 @@ class _BallotScreenState extends State<BallotScreen> {
       return MapEntry(name, _getTeamTotal(name));
     }).toList();
 
-    // Sort Descending (Highest score = Rank 1)
     teamTotals.sort((a, b) => b.value.compareTo(a.value));
 
     bool tieFound = false;
@@ -127,7 +163,6 @@ class _BallotScreenState extends State<BallotScreen> {
 
     for (int i = 0; i < teamTotals.length; i++) {
       double score = teamTotals[i].value;
-      // Mark as 0 if points equal another team (invalid state)
       bool tied = (score > 0) && (
         (i > 0 && score == teamTotals[i-1].value) || 
         (i < teamTotals.length - 1 && score == teamTotals[i+1].value)
@@ -145,8 +180,6 @@ class _BallotScreenState extends State<BallotScreen> {
 
   double _getTeamTotal(String teamName) => _scoreMap[teamName]!
       .fold(0.0, (sum, ctrl) => sum + (double.tryParse(ctrl.text) ?? 0.0));
-
-  // --- UI BUILDING ---
 
   @override
   Widget build(BuildContext context) {
@@ -203,7 +236,6 @@ class _BallotScreenState extends State<BallotScreen> {
                       const Text("IRONMAN ACTIVE", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w900, fontSize: 10)),
                   ]),
                 ),
-                // BP shows Rank Tag, WSDC shows Total Points
                 if (debateRule == "BP")
                   _buildRankBadge(isTied, _ranks[teamName] ?? 0)
                 else
@@ -257,7 +289,7 @@ class _BallotScreenState extends State<BallotScreen> {
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
             textAlign: TextAlign.center,
             decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(vertical: 14), hintText: "0"),
-            onChanged: (v) => _calculateAutoRanks(), // ✅ BP Ranks update instantly on number change
+            onChanged: (v) => _calculateAutoRanks(), 
           )),
         ],
       ),
@@ -273,10 +305,7 @@ class _BallotScreenState extends State<BallotScreen> {
     child: Text(_hasTies ? "RESOLVE TIES TO SUBMIT" : "SUBMIT BALLOT", style: const TextStyle(fontWeight: FontWeight.bold)),
   );
 
-  // --- VALIDATION & SUBMISSION ---
-
   Future<void> _submit() async {
-    // 1. Speaker Selection Validation
     for (var team in _selectedSpeakers.keys) {
       if (_selectedSpeakers[team]!.any((s) => s == null)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All speaker slots must be assigned!")));
@@ -284,13 +313,11 @@ class _BallotScreenState extends State<BallotScreen> {
       }
     }
 
-    // 2. Map data for Validator
     Map<String, List<double>> rawScores = {};
     _scoreMap.forEach((team, controllers) {
       rawScores[team] = controllers.map((c) => double.tryParse(c.text) ?? 0.0).toList();
     });
 
-    // 3. Call Service Validator (WSDC vs BP)
     DebateValidator validator = (debateRule == "BP") ? BPValidator() : WSDCValidator();
     String? error = validator.validate(rawScores, _ranks, validatorSettings);
 
@@ -346,12 +373,10 @@ class _BallotScreenState extends State<BallotScreen> {
         };
       }
 
-      // Save Ballot
       await db.child('ballots/${widget.tournamentId}/${widget.matchId}').set({
         'results': ballotResults, 'round': round, 'timestamp': ServerValue.timestamp,
       });
 
-      // Update Match Status
       await db.child('matches/${widget.tournamentId}/round_$round/${widget.matchId}').update({
         'status': 'Completed',
         'winner': _ranks.entries.firstWhere((e) => e.value == 1).key,

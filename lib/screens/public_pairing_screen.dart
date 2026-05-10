@@ -42,14 +42,16 @@ class _PublicPairingScreenState extends State<PublicPairingScreen> {
     return DefaultTabController(
       length: totalRounds,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: const Color(0xFFF1F5F9),
         appBar: AppBar(
           title: const Text("Tournament Draw", style: TextStyle(fontWeight: FontWeight.bold)),
-          backgroundColor: const Color(0xFF1E293B), // Professional Dark Theme for Public
+          backgroundColor: const Color(0xFF0F172A),
           foregroundColor: Colors.white,
+          elevation: 0,
           bottom: TabBar(
             isScrollable: totalRounds > 4,
             indicatorColor: Colors.white,
+            indicatorWeight: 3,
             tabs: List.generate(totalRounds, (i) => Tab(text: "Round ${i + 1}")),
           ),
         ),
@@ -84,15 +86,15 @@ class PublicRoundView extends StatelessWidget {
         final data = snapshot.data!.snapshot.value as Map?;
         final String status = data?['status'] ?? "Not Generated";
 
-        // ONLY show if status is "Released"
         if (status != "Released") {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.lock_clock_rounded, size: 64, color: Colors.grey.shade300),
+                Icon(Icons.lock_person_rounded, size: 64, color: Colors.blueGrey.withValues(alpha: 0.2)),
                 const SizedBox(height: 16),
-                const Text("Round draw hasn't been released yet.", style: TextStyle(color: Colors.grey)),
+                const Text("Round draw hasn't been released yet.", 
+                  style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500)),
               ],
             ),
           );
@@ -103,12 +105,18 @@ class PublicRoundView extends StatelessWidget {
           builder: (context, AsyncSnapshot<DatabaseEvent> matchSnap) {
             if (!matchSnap.hasData) return const Center(child: CircularProgressIndicator());
             
-            final matchData = matchSnap.data!.snapshot.value as Map?;
-            if (matchData == null) return const Center(child: Text("No matches found."));
+            final dynamic rawMatchData = matchSnap.data!.snapshot.value;
+            if (rawMatchData == null || rawMatchData is! Map) {
+              return const Center(child: Text("No matches found."));
+            }
 
-            List matches = [];
-            matchData.forEach((key, val) {
-              if (val is Map) matches.add(val);
+            // Web-safe map conversion
+            final Map<dynamic, dynamic> matchMap = rawMatchData;
+            List<Map<String, dynamic>> matches = [];
+            matchMap.forEach((key, val) {
+              if (val is Map) {
+                matches.add(Map<String, dynamic>.from(val));
+              }
             });
 
             return ListView.builder(
@@ -122,44 +130,49 @@ class PublicRoundView extends StatelessWidget {
     );
   }
 
-  Widget _buildPublicMatchCard(Map m) {
+  Widget _buildPublicMatchCard(Map<String, dynamic> m) {
     bool isBP = m['rule'] == "BP";
     final List judgeList = m['judges'] is List ? m['judges'] : [];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
+      elevation: 2,
+      shadowColor: Colors.black12,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Room Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.meeting_room_outlined, size: 14, color: Colors.blueGrey),
-                const SizedBox(width: 4),
+                const Icon(Icons.meeting_room_rounded, size: 16, color: Color(0xFF64748B)),
+                const SizedBox(width: 8),
                 Text(
-                  m['room']?.toString().toUpperCase() ?? "TBD",
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.blueGrey, fontSize: 12),
+                  "ROOM: ${m['room']?.toString().toUpperCase() ?? "TBD"}",
+                  style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF334155), fontSize: 13),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: isBP ? _buildBPLayout(m) : _buildWSDCLayout(m),
           ),
+          // Judges Footer
           if (judgeList.isNotEmpty) ...[
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFF2264D7)),
@@ -167,7 +180,7 @@ class PublicRoundView extends StatelessWidget {
                   Expanded(
                     child: Text(
                       judgeList.map((e) => e is Map ? e['name'] : e.toString()).join(", "),
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
                     ),
                   ),
                 ],
@@ -179,40 +192,66 @@ class PublicRoundView extends StatelessWidget {
     );
   }
 
-  Widget _buildWSDCLayout(Map m) {
+  Widget _buildWSDCLayout(Map<String, dynamic> m) {
     return Row(
       children: [
-        _teamTile(m['sideA'] ?? "TBD", const Color(0xFFE0F2FE), const Color(0xFF0369A1)),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("vs", style: TextStyle(color: Colors.grey))),
-        _teamTile(m['sideB'] ?? "TBD", const Color(0xFFFEF2F2), const Color(0xFFB91C1C)),
+        _teamTile("GOV", m['sideA'] ?? "TBD", const Color(0xFFE0F2FE), const Color(0xFF0369A1)),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text("vs", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+        ),
+        _teamTile("OPP", m['sideB'] ?? "TBD", const Color(0xFFFEF2F2), const Color(0xFFB91C1C)),
       ],
     );
   }
 
-  Widget _buildBPLayout(Map m) {
+  Widget _buildBPLayout(Map<String, dynamic> m) {
     return Column(
       children: [
         Row(children: [
-          _teamTile("OG: ${m['sideOG']}", const Color(0xFFECFDF5), const Color(0xFF047857)),
-          const SizedBox(width: 8),
-          _teamTile("OO: ${m['sideOO']}", const Color(0xFFFFF7ED), const Color(0xFFC2410C)),
+          _teamTile("OG", m['sideOG'] ?? "TBD", const Color(0xFFECFDF5), const Color(0xFF047857)),
+          const SizedBox(width: 12),
+          _teamTile("OO", m['sideOO'] ?? "TBD", const Color(0xFFFFF7ED), const Color(0xFFC2410C)),
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Row(children: [
-          _teamTile("CG: ${m['sideCG']}", const Color(0xFFF5F3FF), const Color(0xFF6D28D9)),
-          const SizedBox(width: 8),
-          _teamTile("CO: ${m['sideCO']}", const Color(0xFFFDF2F8), const Color(0xFFBE185D)),
+          _teamTile("CG", m['sideCG'] ?? "TBD", const Color(0xFFF5F3FF), const Color(0xFF6D28D9)),
+          const SizedBox(width: 12),
+          _teamTile("CO", m['sideCO'] ?? "TBD", const Color(0xFFFDF2F8), const Color(0xFFBE185D)),
         ]),
       ],
     );
   }
 
-  Widget _teamTile(String name, Color bg, Color text) {
+  Widget _teamTile(String position, String teamName, Color bg, Color textColor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-        child: Text(name, style: TextStyle(color: text, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: textColor.withValues(alpha: 0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              position,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: textColor.withValues(alpha: 0.7),
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              teamName,
+              style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }
